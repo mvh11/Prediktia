@@ -1,0 +1,86 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0" version="29.6.6">
+  <diagram name="Página-1" id="xJMTmQJc5yYZz53_TwZu">
+    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="M4lcMcsRoOMO6i8agGop-2" edge="1" parent="1" source="M4lcMcsRoOMO6i8agGop-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="414" y="160" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-15" edge="1" parent="1" source="M4lcMcsRoOMO6i8agGop-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="414" y="480" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="Decisiones de apuestas poco informadas, mediante la intuición o análisis pobres de datos." vertex="1">
+          <mxGeometry height="80" width="256" x="286" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Mala gestión del riesgo" vertex="1">
+          <mxGeometry height="60" width="156" x="336" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-4" edge="1" parent="1" source="M4lcMcsRoOMO6i8agGop-1" style="endArrow=none;html=1;rounded=0;exitX=1;exitY=0;exitDx=0;exitDy=0;" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="550" y="260" as="sourcePoint" />
+            <mxPoint x="650" y="160" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Desconfianza en el Sistema" vertex="1">
+          <mxGeometry height="60" width="156" x="560" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-7" edge="1" parent="1" style="endArrow=none;html=1;rounded=0;entryX=0;entryY=0;entryDx=0;entryDy=0;" target="M4lcMcsRoOMO6i8agGop-1" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="160" y="160" as="sourcePoint" />
+            <mxPoint x="260" y="260" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Pérdidas económicas" vertex="1">
+          <mxGeometry height="60" width="156" x="100" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-9" edge="1" parent="1" style="endArrow=none;html=1;rounded=0;" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="190" y="450" as="sourcePoint" />
+            <mxPoint x="286" y="350" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-10" edge="1" parent="1" source="M4lcMcsRoOMO6i8agGop-1" style="endArrow=none;html=1;rounded=0;exitX=1;exitY=1;exitDx=0;exitDy=0;" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="390" y="430" as="sourcePoint" />
+            <mxPoint x="630" y="450" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-12" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Información dispersa" vertex="1">
+          <mxGeometry height="60" width="156" x="110" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-13" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Fuentes poco confiables" vertex="1">
+          <mxGeometry height="60" width="156" x="560" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-16" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Falta de análisis estadistico" vertex="1">
+          <mxGeometry height="60" width="156" x="335.5" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-18" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="" vertex="1">
+          <mxGeometry height="20" width="20" x="50" y="520" as="geometry" />
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-19" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#f8cecc;strokeColor=#b85450;" value="" vertex="1">
+          <mxGeometry height="20" width="20" x="50" y="550" as="geometry" />
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-20" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#fff2cc;strokeColor=#d6b656;" value="" vertex="1">
+          <mxGeometry height="20" width="20" x="50" y="580" as="geometry" />
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-21" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="Causas" vertex="1">
+          <mxGeometry height="30" width="60" x="70" y="515" as="geometry" />
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-22" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="Problema" vertex="1">
+          <mxGeometry height="30" width="50" x="80" y="545" as="geometry" />
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-23" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="Efectos" vertex="1">
+          <mxGeometry height="30" width="60" x="70" y="575" as="geometry" />
+        </mxCell>
+        <mxCell id="M4lcMcsRoOMO6i8agGop-24" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;b&gt;&lt;font style=&quot;font-size: 18px;&quot;&gt;Diagrama de ÁRBOL DE PROBLEMAS&lt;/font&gt;&lt;/b&gt;" vertex="1">
+          <mxGeometry height="30" width="60" x="384" y="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
