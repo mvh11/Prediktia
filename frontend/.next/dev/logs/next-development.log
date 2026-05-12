@@ -1,0 +1,5 @@
+{"timestamp":"00:00:02.887","source":"Server","level":"LOG","message":""}
+{"timestamp":"00:00:09.111","source":"Server","level":"LOG","message":"○ Compiling /dev/format-matches ..."}
+{"timestamp":"00:00:11.441","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:00:17.582","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:00:18.785","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}

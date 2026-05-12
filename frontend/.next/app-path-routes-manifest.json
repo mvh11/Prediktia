@@ -1,0 +1,9 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/dev/format-matches/page": "/dev/format-matches",
+  "/favicon.ico/route": "/favicon.ico",
+  "/page": "/",
+  "/planes/page": "/planes",
+  "/value/page": "/value"
+}
