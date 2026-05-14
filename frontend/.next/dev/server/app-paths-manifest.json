@@ -1,4 +1,4 @@
 {
-  "/dev/format-matches/page": "app/dev/format-matches/page.js",
-  "/page": "app/page.js"
+  "/page": "app/page.js",
+  "/dev/format-matches/page": "app/dev/format-matches/page.js"
 }
