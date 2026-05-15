@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import acca, matches
+from app.api.routes import acca, matches, value_bets
 
 app = FastAPI(
     title="Prediktia API",
@@ -18,6 +18,7 @@ app.add_middleware(
 )
 
 app.include_router(matches.router)
+app.include_router(value_bets.router)
 app.include_router(acca.router)
 
 

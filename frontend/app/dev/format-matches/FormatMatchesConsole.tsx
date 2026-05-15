@@ -3,52 +3,11 @@
 import { useEffect, useState } from "react";
 
 import {
-  formatMatches,
+  fetchFormattedMatchesOnce,
   FormatMatchesError,
+  MATCHES_BASE_URL,
   type FormattedMatch,
 } from "@/lib/matches";
-
-const DEFAULT_BACKEND = "http://127.0.0.1:8000";
-
-const MATCHES_BASE =
-  (typeof process !== "undefined" &&
-    process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "")) ||
-  DEFAULT_BACKEND;
-
-type MatchesApiPayload = {
-  raw_fixtures?: unknown;
-};
-
-let devMatchesCache: FormattedMatch[] | null = null;
-let devMatchesInflight: Promise<FormattedMatch[]> | null = null;
-
-/**
- * Una sola petición al upstream por proceso: reutiliza caché o la promesa en curso
- * (útil con Strict Mode / remontajes sin bucles de fetch).
- */
-function fetchFormattedMatchesOnce(): Promise<FormattedMatch[]> {
-  if (devMatchesCache) {
-    return Promise.resolve(devMatchesCache);
-  }
-  if (devMatchesInflight) {
-    return devMatchesInflight;
-  }
-
-  devMatchesInflight = (async () => {
-    const res = await fetch(`${MATCHES_BASE}/matches`, { cache: "no-store" });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} al llamar ${MATCHES_BASE}/matches`);
-    }
-    const data = (await res.json()) as MatchesApiPayload;
-    const clean = formatMatches(data.raw_fixtures);
-    devMatchesCache = clean;
-    return clean;
-  })();
-
-  return devMatchesInflight.finally(() => {
-    devMatchesInflight = null;
-  });
-}
 
 function scoreLabel(value: number | null): string {
   return value === null || value === undefined ? "—" : String(value);
@@ -98,9 +57,11 @@ export function FormatMatchesConsole() {
         <p className="mt-2 text-sm text-gray-400">
           Partidos formateados desde{" "}
           <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-cyan-300">
-            {MATCHES_BASE}/matches
-          </code>
-          . Opcional:{" "}
+            {MATCHES_BASE_URL}/matches
+          </code>{" "}
+          (misma caché que{" "}
+          <code className="rounded bg-gray-800 px-1 py-0.5 text-xs">/matches</code>
+          ). Opcional: define{" "}
           <code className="rounded bg-gray-800 px-1 py-0.5 text-xs">
             NEXT_PUBLIC_BACKEND_URL
           </code>{" "}
