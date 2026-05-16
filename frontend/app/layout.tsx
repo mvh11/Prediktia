@@ -15,8 +15,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Prediktia",
-  description: "Predicciones deportivas con IA",
+  title: {
+    default: "Prediktia Intelligence",
+    template: "%s | Prediktia",
+  },
+  description:
+    "Predicciones deportivas con IA, value bets y ACCA inteligente. Modelos Poisson, EV y gestión de riesgo.",
 };
 
 export default function RootLayout({
@@ -29,7 +33,7 @@ export default function RootLayout({
       lang="es"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-gray-950 text-white">
+      <body className="flex min-h-full flex-col bg-[#050508] text-white">
 
         <PrimaryNav />
 

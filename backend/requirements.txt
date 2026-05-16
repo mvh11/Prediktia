@@ -1,5 +1,12 @@
+# API
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
 requests==2.32.3
 python-dotenv==1.0.1
 pydantic-settings==2.6.1
+
+# PostgreSQL / ORM (instalar siempre con: pip install -r requirements.txt)
+# Si faltan, FastAPI arranca en modo stateless sin persistencia ACCA.
+SQLAlchemy==2.0.36
+alembic==1.14.0
+psycopg2-binary==2.9.10

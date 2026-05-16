@@ -1,0 +1,27 @@
+# PostgreSQL local para Prediktia (desarrollo).
+# Uso: docker compose up -d
+# Conexión: localhost:5432 · usuario prediktia · base prediktia_db
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: prediktia-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: prediktia
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: prediktia_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - prediktia_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prediktia -d prediktia_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+volumes:
+  prediktia_pgdata:
+    name: prediktia_pgdata

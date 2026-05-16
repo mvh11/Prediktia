@@ -30,28 +30,19 @@ class FootballApiError(Exception):
         self.response_text = response_text
 
 
-def fetch_fixtures_by_date(settings: Settings, day: date) -> dict[str, Any]:
-    """
-    Obtiene los partidos (fixtures) del día indicado.
-
-    Una sola petición GET sin reintentos. Timeout (connect, read) desde settings.
-    Documentación: GET /fixtures?date=YYYY-MM-DD.
-    """
-    url = f"{settings.api_football_base_url.rstrip('/')}/fixtures"
+def _api_get(
+    settings: Settings,
+    path: str,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    url = f"{settings.api_football_base_url.rstrip('/')}/{path.lstrip('/')}"
     headers = {"x-apisports-key": settings.api_football_key}
-    params = {"date": day.isoformat()}
     timeout = (
         settings.api_football_timeout_connect_seconds,
         settings.api_football_timeout_read_seconds,
     )
-
     try:
-        response = requests.get(
-            url,
-            headers=headers,
-            params=params,
-            timeout=timeout,
-        )
+        response = requests.get(url, headers=headers, params=params, timeout=timeout)
     except requests.RequestException as exc:
         raise FootballApiError(
             f"No se pudo conectar con API-Football: {exc}",
@@ -86,6 +77,44 @@ def fetch_fixtures_by_date(settings: Settings, day: date) -> dict[str, Any]:
         )
 
     return payload
+
+
+def fetch_fixtures_by_ids(settings: Settings, fixture_ids: list[int]) -> dict[str, Any]:
+    """
+    Fixtures por ids (GET /fixtures?ids=1-2-3).
+    La API suele limitar ~20 ids por petición; se trocea automáticamente.
+    """
+    ids = sorted({int(i) for i in fixture_ids if i is not None})
+    if not ids:
+        return {"response": []}
+    chunk_size = 20
+    merged: list[dict[str, Any]] = []
+    for i in range(0, len(ids), chunk_size):
+        chunk = ids[i : i + chunk_size]
+        ids_param = "-".join(str(x) for x in chunk)
+        payload = _api_get(settings, "fixtures", {"ids": ids_param})
+        part = payload.get("response") or []
+        if isinstance(part, list):
+            merged.extend(p for p in part if isinstance(p, dict))
+    return {"response": merged}
+
+
+def fetch_fixtures_by_date(settings: Settings, day: date) -> dict[str, Any]:
+    """
+    Obtiene los partidos (fixtures) del día indicado.
+
+    Una sola petición GET sin reintentos. Timeout (connect, read) desde settings.
+    Documentación: GET /fixtures?date=YYYY-MM-DD.
+    """
+    return _api_get(settings, "fixtures", {"date": day.isoformat()})
+
+
+def fetch_odds_by_fixture(settings: Settings, fixture_id: int) -> dict[str, Any]:
+    """
+    Cuotas por fixture. GET /odds?fixture={id}
+    La disponibilidad depende del plan API-Football y de la competición.
+    """
+    return _api_get(settings, "odds", {"fixture": fixture_id})
 
 
 def fetch_fixtures_by_date_cached(settings: Settings, day: date) -> dict[str, Any]:

@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.config import Settings, get_settings
 from app.schemas.value_bets import ValueBetPick, ValueBetsResponse
 from app.services.football_api import FootballApiError, fetch_fixtures_by_date_cached
+from app.services.pipeline_debug import log_all_fixtures_pipeline
 from app.services.value_bets import build_mock_positive_ev_picks
 
 logger = logging.getLogger(__name__)
@@ -64,6 +66,16 @@ def list_value_bets(
 
     raw_picks = build_mock_positive_ev_picks(fixtures)
     picks = [ValueBetPick.model_validate(p) for p in raw_picks]
+
+    # Diagnóstico LATAM en logs: export PIPELINE_DEBUG_LATAM=1
+    if os.environ.get("PIPELINE_DEBUG_LATAM", "").strip() in ("1", "true", "yes"):
+        log_all_fixtures_pipeline(
+            fixtures,
+            settings,
+            day,
+            fetch_odds=False,
+            latam_only=True,
+        )
 
     return ValueBetsResponse(
         date=day.isoformat(),

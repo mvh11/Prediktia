@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +20,15 @@ class Settings(BaseSettings):
     api_football_timeout_read_seconds: float = 25.0
     # 0 = desactiva caché. >0 reutiliza la última respuesta OK por fecha durante ese TTL (desarrollo).
     matches_upstream_cache_ttl_seconds: int = 90
+
+    # PostgreSQL (opcional). Si falta, la API sigue sin persistencia.
+    database_url: str | None = Field(
+        default=None,
+        description="postgresql+psycopg2://user:pass@host:5432/dbname",
+    )
+
+    # ACCA: margen (min) antes del kickoff en UTC; 0 = desactivado (solo futuro estricto).
+    acca_min_minutes_before_kickoff: int = 0
 
 
 @lru_cache
