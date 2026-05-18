@@ -3,5 +3,6 @@
   "/matches/page": "app/matches/page.js",
   "/value/page": "app/value/page.js",
   "/acca/page": "app/acca/page.js",
-  "/planes/page": "app/planes/page.js"
+  "/planes/page": "app/planes/page.js",
+  "/legal/page": "app/legal/page.js"
 }

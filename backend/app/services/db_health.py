@@ -17,6 +17,27 @@ def _redact_database_url(url: str) -> str:
     return _SAFE_URL_RE.sub(r"//\1:***@", url, count=1)
 
 
+def database_connected(settings: Settings) -> bool:
+    """True si DATABASE_URL está definida, PostgreSQL responde y existe acca_history."""
+    if not settings.database_url:
+        return False
+    try:
+        from sqlalchemy import text
+
+        from app.db.session import get_engine
+
+        eng = get_engine(settings.database_url)
+        if eng is None:
+            return False
+        with eng.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            tbl = conn.execute(text("SELECT to_regclass('public.acca_history')::text")).scalar()
+            return bool(tbl)
+    except Exception as exc:
+        logger.debug("database_connected: %s", exc)
+        return False
+
+
 def build_db_health_payload(settings: Settings) -> dict[str, Any]:
     """
     Carga útil para GET /health/db.

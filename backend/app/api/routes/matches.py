@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.config import Settings, get_settings
 from app.schemas.matches import MatchesResponse
-from app.services.football_api import FootballApiError, fetch_fixtures_by_date_cached
+from app.services.football_api import extract_cache_meta, fetch_fixtures_by_date_cached
 
 logger = logging.getLogger(__name__)
 
@@ -36,44 +36,24 @@ def list_matches(
     """
     Lista los partidos del día (por defecto hoy en UTC).
 
-    Los datos provienen de API-Football; se devuelve la lista en `raw_fixtures`
-    para que el frontend pueda mapear los campos que necesite.
+    Usa caché compartida de fixtures (TTL ≥ 5 min). Ante 429 devuelve caché antigua o [].
     """
     day = _parse_date(date_param)
-    try:
-        payload = fetch_fixtures_by_date_cached(settings, day)
-    except FootballApiError as exc:
-        body_fragment = (exc.response_text or "")[:2000]
-        logger.error(
-            "Fallo upstream API-Football (se responderá 502 al cliente). "
-            "date=%s type=%s msg=%s http_status=%s body_fragment=%r",
-            day.isoformat(),
-            type(exc).__name__,
-            str(exc),
-            exc.status_code,
-            body_fragment,
-            exc_info=True,
-        )
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    payload = fetch_fixtures_by_date_cached(settings, day)
+    meta = extract_cache_meta(payload)
 
     fixtures = payload.get("response") or []
     if not isinstance(fixtures, list):
-        logger.error(
-            "Formato inesperado en payload API-Football (502). date=%s "
-            "payload_keys=%s response_type=%s response_repr=%r",
-            day.isoformat(),
-            list(payload.keys()) if isinstance(payload, dict) else type(payload),
-            type(fixtures).__name__,
-            fixtures,
-            exc_info=False,
-        )
-        raise HTTPException(
-            status_code=502,
-            detail="Formato inesperado en la respuesta de API-Football.",
-        )
+        logger.warning("matches: response no es lista date=%s", day.isoformat())
+        fixtures = []
+
+    if meta.rate_limited:
+        logger.warning("matches: rate limit — stale=%s warning=%s", meta.stale, meta.warning)
 
     return MatchesResponse(
         date=day.isoformat(),
         results_count=len(fixtures),
         raw_fixtures=fixtures,
+        upstream_warning=meta.warning,
+        cache_stale=meta.stale,
     )

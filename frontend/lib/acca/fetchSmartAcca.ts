@@ -18,11 +18,14 @@ export async function fetchSmartAcca(
     cache: "no-store",
   });
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status} al llamar /acca`);
+    throw new Error(
+      "No se pudo generar la combinada. El servidor no respondió; inténtalo en unos minutos.",
+    );
   }
   const data = (await res.json()) as SmartAccaResponse;
   if (!Array.isArray(data.picks)) {
-    throw new Error("Respuesta /acca inválida");
+    data.picks = [];
+    data.pick_count = 0;
   }
   return data;
 }

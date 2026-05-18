@@ -3,23 +3,16 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import ValidationError
 
 from app.config import Settings, get_settings
-from app.schemas.acca import (
-    AccaHistoryListResponse,
-    AccaSettleRequest,
-    SmartAccaResponse,
-)
-from app.services.acca_persistence import (
-    list_acca_history,
-    persist_smart_acca,
-    settle_acca_history,
-)
-from app.services.football_api import FootballApiError
-from app.services.acca_settlement import settle_pending_accas
+from app.schemas.acca import AccaHistoryListResponse, SmartAccaResponse
+from app.services.acca_persistence import list_acca_history, persist_smart_acca
+from app.services.db_health import database_connected
 from app.services.smart_acca import (
     RiskLevel,
+    SIMPLE_PROFILES,
+    RISK_LABELS,
     generate_acca_for_date,
     resolve_acca_calendar_day_for_pre_match,
 )
@@ -27,6 +20,52 @@ from app.services.smart_acca import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/acca", tags=["acca"])
+
+
+def _safe_empty_acca(day: date, risk: RiskLevel, message: str) -> dict[str, Any]:
+    profile = SIMPLE_PROFILES[risk]
+    n = profile.exact_picks
+    return {
+        "date": day.isoformat(),
+        "model_version": "poisson-v1+ev-simple",
+        "risk": risk,
+        "risk_label": RISK_LABELS[risk],
+        "profile": {
+            "min_picks": n,
+            "max_picks": n,
+            "target_odds_range": f"{profile.target_min} – {profile.target_max}",
+        },
+        "picks": [],
+        "pick_count": 0,
+        "total_odds": 1.0,
+        "combined_probability": 0.0,
+        "combined_ev": 0.0,
+        "combined_ev_pct": 0.0,
+        "confidence_score": 0.0,
+        "risk_score": 0.0,
+        "volatility_score": 0.0,
+        "message": message,
+        "meta": {
+            "candidates_pool_size": 0,
+            "eligible_after_filters": 0,
+            "bookmaker_odds_picks": 0,
+            "independence_assumption": "P(combinada) ≈ ∏ P(picks).",
+            "fetch_odds": False,
+            "fixtures_upstream_total": 0,
+            "fixtures_after_schedule_filter": 0,
+            "fixtures_after_schedule_strict": 0,
+            "schedule_filter_fallback": False,
+            "schedule_discard_reasons": {},
+            "fixtures_source": "api_football",
+            "requested_date": day.isoformat(),
+            "resolved_date": day.isoformat(),
+            "auto_shifted_date": False,
+            "unique_fixtures_count": 0,
+            "risk_profile_validation": {},
+            "persist_status": "not_attempted",
+            "persist_error": None,
+        },
+    }
 
 
 def _parse_date_required(value: str) -> date:
@@ -51,16 +90,12 @@ def get_smart_acca(
         description="Fecha UTC (YYYY-MM-DD). Si se omite, se busca el primer día en [hoy..hoy+3] con fixtures pre-partido válidos.",
     ),
     fetch_odds: bool = Query(
-        default=True,
-        description="Enriquecer con cuotas API-Football cuando existan.",
+        default=False,
+        description="Enriquecer con cuotas API-Football (costoso; desactivado por defecto para el plan gratuito).",
     ),
     settings: Settings = Depends(get_settings),
 ) -> SmartAccaResponse:
-    """
-    Genera una combinada ACCA distinta según el perfil de riesgo.
-
-    Motor: Poisson (probabilidades) + EV real vs cuota + selección anti-correlación.
-    """
+    """Genera una combinada ACCA según el perfil de riesgo (motor simple Poisson + EV)."""
     requested_day: date
     resolved_day: date
     auto_shifted = False
@@ -68,42 +103,43 @@ def get_smart_acca(
     if date_param is None:
         requested_day = datetime.now(timezone.utc).date()
         resolved_day, _, auto_shifted = resolve_acca_calendar_day_for_pre_match(
-            settings, requested_day
+            settings, requested_day, max_extra_days=1
         )
     else:
         requested_day = _parse_date_required(date_param)
         resolved_day = requested_day
+        auto_shifted = False
 
     logger.info(
-        "GET /acca risk=%s requested_date=%s resolved_date=%s fetch_odds=%s",
+        "GET /acca risk=%s requested_date=%s resolved_date=%s",
         risk,
         requested_day.isoformat(),
         resolved_day.isoformat(),
-        fetch_odds,
     )
 
     try:
         result = generate_acca_for_date(settings, resolved_day, risk, fetch_odds=fetch_odds)
-    except FootballApiError as exc:
-        logger.error("acca upstream error: %s", exc, exc_info=True)
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("GET /acca: error inesperado risk=%s", risk)
+        if risk == "extreme":
+            result = _safe_empty_acca(
+                resolved_day,
+                risk,
+                "No hay suficientes partidos disponibles actualmente para armar esta combinada.",
+            )
+        else:
+            raise
 
     result["meta"]["requested_date"] = requested_day.isoformat()
     result["meta"]["resolved_date"] = resolved_day.isoformat()
     result["meta"]["auto_shifted_date"] = auto_shifted
 
-    logger.info(
-        "ACCA_DATE_RESOLVE requested=%s resolved=%s shifted=%s fixtures=%s",
-        requested_day.isoformat(),
-        resolved_day.isoformat(),
-        str(auto_shifted).lower(),
-        result["meta"].get("fixtures_after_schedule_filter", 0),
-    )
-
-    if result["pick_count"] == 0:
+    profile = result.get("profile") or {}
+    min_required = int(profile.get("min_picks") or 0)
+    if result["pick_count"] < min_required and risk != "extreme":
         result["message"] = (
-            f"No se pudo armar combinada con los filtros de este riesgo para el día {result['date']} (UTC). "
-            "Prueba otro perfil, otra fecha, o fetch_odds=true si hay cuotas en tu plan API."
+            result.get("message")
+            or "No hay suficientes partidos disponibles actualmente para armar esta combinada."
         )
 
     try:
@@ -112,44 +148,31 @@ def get_smart_acca(
             result["acca_id"] = acca_id
             result["meta"]["persist_status"] = "ok"
             result["meta"]["persist_error"] = None
-            result["meta"]["persist_verify_message"] = persist_detail
-            if persist_detail:
-                logger.warning(
-                    "GET /acca persist verify warning acca_id=%s detail=%s",
-                    acca_id,
-                    persist_detail,
-                )
         elif persist_detail in ("no_database_url", "no_sqlalchemy_impl_or_disabled"):
             result["meta"]["persist_status"] = "skipped"
             result["meta"]["persist_error"] = None
-            result["meta"]["persist_verify_message"] = persist_detail
         else:
             result["meta"]["persist_status"] = "failed"
             result["meta"]["persist_error"] = persist_detail
-            result["meta"]["persist_verify_message"] = None
             logger.error("GET /acca persistencia fallida detail=%s", persist_detail)
     except Exception:
-        logger.exception("GET /acca: excepción no esperada en persistencia")
+        logger.exception("GET /acca: excepción en persistencia")
         result["meta"]["persist_status"] = "failed"
         result["meta"]["persist_error"] = "unexpected_exception_in_route"
-        result["meta"]["persist_verify_message"] = None
 
-    return SmartAccaResponse.model_validate(result)
-
-
-@router.get("/settle")
-def run_acca_auto_settlement(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
-    """
-    Ejecuta liquidación automática de ACCAs `pending` (resultados API-Football).
-    Pensado para pruebas manuales; más adelante se puede invocar desde un scheduler.
-    """
-    if not settings.database_url:
-        raise HTTPException(
-            status_code=503,
-            detail="Persistencia no disponible (sin DATABASE_URL).",
+    try:
+        return SmartAccaResponse.model_validate(result)
+    except ValidationError:
+        logger.exception("GET /acca: respuesta no validó schema; devolviendo vacío risk=%s", risk)
+        empty = _safe_empty_acca(
+            resolved_day,
+            risk,
+            "No hay suficientes partidos disponibles actualmente para armar esta combinada.",
         )
-    logger.info("GET /acca/settle manual trigger")
-    return settle_pending_accas(settings)
+        empty["meta"]["requested_date"] = requested_day.isoformat()
+        empty["meta"]["resolved_date"] = resolved_day.isoformat()
+        empty["meta"]["auto_shifted_date"] = auto_shifted
+        return SmartAccaResponse.model_validate(empty)
 
 
 @router.get("/history", response_model=AccaHistoryListResponse)
@@ -157,39 +180,13 @@ def get_acca_history(
     limit: int = Query(default=30, ge=1, le=200),
     settings: Settings = Depends(get_settings),
 ) -> AccaHistoryListResponse:
-    """Historial de combinadas generadas (requiere DATABASE_URL + stack ORM)."""
+    """Historial de combinadas guardadas (PostgreSQL)."""
     try:
         items = list_acca_history(settings, limit=limit)
     except Exception:
-        logger.exception("GET /acca/history: error inesperado; se devuelve lista vacía.")
+        logger.exception("GET /acca/history: error inesperado")
         items = []
     return AccaHistoryListResponse(
         items=items,
-        database_configured=bool(settings.database_url),
+        database_configured=database_connected(settings),
     )
-
-
-class AccaSettleResponse(BaseModel):
-    acca_id: str
-    status: str
-    roi: float | None = None
-
-
-@router.patch("/history/{acca_id}", response_model=AccaSettleResponse)
-def patch_acca_history(
-    acca_id: str,
-    body: AccaSettleRequest,
-    settings: Settings = Depends(get_settings),
-) -> AccaSettleResponse:
-    """Liquidación manual o vía job: pending | won | lost (+ ROI opcional)."""
-    code = settle_acca_history(settings, acca_id, status=body.status, roi=body.roi)
-    if code == "unavailable":
-        raise HTTPException(
-            status_code=503,
-            detail="Persistencia no disponible (sin DATABASE_URL, sin SQLAlchemy o sin conexión).",
-        )
-    if code == "not_found":
-        raise HTTPException(status_code=404, detail=f"No existe acca_id={acca_id}")
-    if code == "error":
-        raise HTTPException(status_code=500, detail="No se pudo actualizar la liquidación.")
-    return AccaSettleResponse(acca_id=acca_id, status=body.status, roi=body.roi)

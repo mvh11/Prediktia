@@ -13,3 +13,8 @@ class MatchesResponse(BaseModel):
         ...,
         description="Lista de partidos en el formato de API-Football (array `response`).",
     )
+    upstream_warning: str | None = Field(
+        default=None,
+        description="Aviso si se sirvieron datos en caché por límite de API.",
+    )
+    cache_stale: bool = False

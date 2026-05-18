@@ -1,14 +1,22 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+_ENV_CANDIDATES = (
+    _BACKEND_DIR / ".env",
+    _BACKEND_DIR.parent / ".env",
+)
+_ENV_FILES = tuple(str(p) for p in _ENV_CANDIDATES if p.is_file()) or (str(_BACKEND_DIR / ".env"),)
 
 
 class Settings(BaseSettings):
     """Configuración cargada desde variables de entorno y archivo .env."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILES,
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -18,8 +26,8 @@ class Settings(BaseSettings):
     # Timeout (connect, read) en segundos; sin reintentos (una sola petición HTTP).
     api_football_timeout_connect_seconds: float = 10.0
     api_football_timeout_read_seconds: float = 25.0
-    # 0 = desactiva caché. >0 reutiliza la última respuesta OK por fecha durante ese TTL (desarrollo).
-    matches_upstream_cache_ttl_seconds: int = 90
+    # TTL (s) caché fixtures/odds; mínimo efectivo 300s. Compartido por matches, value y acca.
+    matches_upstream_cache_ttl_seconds: int = 300
 
     # PostgreSQL (opcional). Si falta, la API sigue sin persistencia.
     database_url: str | None = Field(

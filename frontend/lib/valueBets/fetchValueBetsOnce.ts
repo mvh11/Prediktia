@@ -20,11 +20,21 @@ export function fetchValueBetsOnce(): Promise<ValueBetsResponse> {
   inflight = (async () => {
     const res = await fetch(`${MATCHES_BASE_URL}/value-bets`, { cache: "no-store" });
     if (!res.ok) {
-      throw new Error(`HTTP ${res.status} al llamar ${MATCHES_BASE_URL}/value-bets`);
+      console.warn(`[value-bets] HTTP ${res.status} — respuesta vacía para no romper la demo`);
+      const empty: ValueBetsResponse = {
+        date: "",
+        picks_count: 0,
+        picks: [],
+        upstream_warning: "Backend no disponible temporalmente.",
+        cache_stale: false,
+      };
+      cache = empty;
+      return empty;
     }
     const data = (await res.json()) as ValueBetsResponse;
     if (!Array.isArray(data.picks)) {
-      throw new Error("Respuesta inválida: falta picks[]");
+      data.picks = [];
+      data.picks_count = 0;
     }
     cache = data;
     return data;

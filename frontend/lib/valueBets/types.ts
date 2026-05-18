@@ -30,7 +30,9 @@ export type ValueBetPick = {
 
 export type ValueBetsResponse = {
   date: string;
-  source: string;
+  source?: string;
   picks_count: number;
   picks: ValueBetPick[];
+  upstream_warning?: string | null;
+  cache_stale?: boolean;
 };

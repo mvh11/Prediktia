@@ -6,8 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.config import Settings, get_settings
 from app.schemas.value_bets import ValueBetPick, ValueBetsResponse
-from app.services.football_api import FootballApiError, fetch_fixtures_by_date_cached
+from app.services.acca_fixture_filter import filter_and_sort_fixtures_for_acca
+from app.services.football_api import extract_cache_meta, fetch_fixtures_by_date_cached
 from app.services.pipeline_debug import log_all_fixtures_pipeline
+from app.services.smart_acca import resolve_acca_calendar_day_for_pre_match
 from app.services.value_bets import build_mock_positive_ev_picks
 
 logger = logging.getLogger(__name__)
@@ -37,37 +39,48 @@ def list_value_bets(
     settings: Settings = Depends(get_settings),
 ) -> ValueBetsResponse:
     """
-    Picks con EV positivo derivados de los mismos fixtures que `/matches`.
-
-    Reutiliza `fetch_fixtures_by_date_cached` (sin peticiones extra al upstream
-    si la fecha ya está en caché por una llamada reciente a `/matches` o aquí).
+    Picks con EV positivo desde fixtures cacheados (misma caché que /matches y /acca).
     """
-    day = _parse_date(date_param)
-    try:
-        payload = fetch_fixtures_by_date_cached(settings, day)
-    except FootballApiError as exc:
-        body_fragment = (exc.response_text or "")[:2000]
-        logger.error(
-            "Fallo upstream API-Football en value-bets. date=%s msg=%s http=%s body=%r",
-            day.isoformat(),
-            str(exc),
-            exc.status_code,
-            body_fragment,
-            exc_info=True,
+    warning: str | None = None
+    stale = False
+
+    if date_param is None:
+        requested = datetime.now(timezone.utc).date()
+        day, _, _ = resolve_acca_calendar_day_for_pre_match(
+            settings, requested, max_extra_days=1
         )
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    else:
+        day = _parse_date(date_param)
+
+    payload = fetch_fixtures_by_date_cached(settings, day)
+    meta = extract_cache_meta(payload)
+    if meta.warning:
+        warning = meta.warning
+    stale = meta.stale
 
     fixtures = payload.get("response") or []
     if not isinstance(fixtures, list):
-        raise HTTPException(
-            status_code=502,
-            detail="Formato inesperado en la respuesta de API-Football.",
-        )
+        logger.warning("value-bets: response no es lista date=%s", day.isoformat())
+        fixtures = []
 
-    raw_picks = build_mock_positive_ev_picks(fixtures)
+    now_utc = datetime.now(timezone.utc)
+    prematch_fixtures, _, _ = filter_and_sort_fixtures_for_acca(
+        fixtures,
+        now_utc=now_utc,
+        min_minutes_before_kickoff=settings.acca_min_minutes_before_kickoff,
+        emit_trace_log=False,
+    )
+    logger.info(
+        "value-bets date=%s upstream=%s prematch=%s stale=%s",
+        day.isoformat(),
+        len(fixtures),
+        len(prematch_fixtures),
+        stale,
+    )
+
+    raw_picks = build_mock_positive_ev_picks(prematch_fixtures)
     picks = [ValueBetPick.model_validate(p) for p in raw_picks]
 
-    # Diagnóstico LATAM en logs: export PIPELINE_DEBUG_LATAM=1
     if os.environ.get("PIPELINE_DEBUG_LATAM", "").strip() in ("1", "true", "yes"):
         log_all_fixtures_pipeline(
             fixtures,
@@ -81,4 +94,6 @@ def list_value_bets(
         date=day.isoformat(),
         picks_count=len(picks),
         picks=picks,
+        upstream_warning=warning,
+        cache_stale=stale,
     )

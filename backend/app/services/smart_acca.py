@@ -1,25 +1,27 @@
 """
-Smart ACCA Builder: selección de combinadas por perfil de riesgo.
+Smart ACCA Builder — versión simple y estable para demo de tesis.
 
-Pipeline explícito (logs por etapa):
-  candidate_pool → eligible → assembly (producto mínimo bajo tope) → enhance →
-  shrink (nunca baja de min_picks) → fill → repair → trim → garantía final.
+Pipeline: pool de candidatos → filtro básico → top EV → N picks (fixture único) →
+ajuste ligero de cuota combinada → salida.
 """
 
 from __future__ import annotations
 
 import logging
 import math
-from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from collections.abc import Callable
 from typing import Any, Literal
 
 from app.config import Settings
-from app.services.acca_candidates import AccaCandidate, build_acca_candidate_pool, candidate_is_minor
+from app.services.acca_candidates import AccaCandidate, build_acca_candidate_pool
 from app.services.acca_fixture_filter import filter_and_sort_fixtures_for_acca
-from app.services.football_api import fetch_fixtures_by_date_cached
+from app.services.football_api import (
+    extract_cache_meta,
+    fetch_fixtures_by_date_cached,
+    peek_fixtures_cache,
+)
+from app.services.league_priority import league_priority_score
 
 logger = logging.getLogger(__name__)
 
@@ -27,383 +29,60 @@ RiskLevel = Literal["low", "medium", "high", "extreme"]
 
 
 @dataclass(frozen=True)
-class RiskProfile:
-    min_picks: int
-    max_picks: int
-    min_prob: float
-    min_ev: float
-    min_single_odds: float
+class SimpleAccaProfile:
+    exact_picks: int
+    target_min: float
+    target_max: float
     max_single_odds: float
-    target_total_odds_min: float
-    target_total_odds_max: float
-    max_volatility: float
-    min_confidence_pct: float
-    avoid_minor_leagues: bool
-    avoid_volatile_markets: bool
-    allow_underdogs: bool
-    max_picks_per_league: int
-    preferred_markets: frozenset[str]
-    exceptional_odds_min: float | None = None
-    max_exceptional_picks: int = 0
-    exceptional_min_ev: float = 0.12
-    exceptional_min_edge_pct: float = 12.0
-    exceptional_max_odds_cap: float = 15.0
-    min_combined_probability: float | None = None
 
 
-RISK_PROFILES: dict[RiskLevel, RiskProfile] = {
-    "low": RiskProfile(
-        min_picks=2,
-        max_picks=4,
-        min_prob=0.52,
-        min_ev=0.003,
-        min_single_odds=1.08,
-        max_single_odds=2.20,
-        target_total_odds_min=1.8,
-        target_total_odds_max=4.5,
-        max_volatility=0.48,
-        min_confidence_pct=55.0,
-        avoid_minor_leagues=False,
-        avoid_volatile_markets=True,
-        allow_underdogs=False,
-        max_picks_per_league=2,
-        preferred_markets=frozenset({"Doble oportunidad", "Total goles", "1X2"}),
-        exceptional_odds_min=None,
-        max_exceptional_picks=0,
-        exceptional_min_ev=0.12,
-        exceptional_min_edge_pct=12.0,
-        exceptional_max_odds_cap=2.20,
-        min_combined_probability=None,
-    ),
-    "medium": RiskProfile(
-        min_picks=3,
-        max_picks=5,
-        min_prob=0.34,
-        min_ev=0.002,
-        min_single_odds=1.05,
-        max_single_odds=4.0,
-        target_total_odds_min=3.0,
-        target_total_odds_max=10.0,
-        max_volatility=0.65,
-        min_confidence_pct=44.0,
-        avoid_minor_leagues=False,
-        avoid_volatile_markets=False,
-        allow_underdogs=False,
-        max_picks_per_league=2,
-        preferred_markets=frozenset({"Doble oportunidad", "1X2", "Total goles"}),
-        exceptional_odds_min=None,
-        max_exceptional_picks=0,
-        exceptional_min_ev=0.12,
-        exceptional_min_edge_pct=12.0,
-        exceptional_max_odds_cap=4.0,
-        min_combined_probability=None,
-    ),
-    "high": RiskProfile(
-        min_picks=4,
-        max_picks=6,
-        min_prob=0.30,
-        min_ev=0.004,
-        min_single_odds=1.06,
-        max_single_odds=9.0,
-        target_total_odds_min=8.0,
-        target_total_odds_max=28.0,
-        max_volatility=0.94,
-        min_confidence_pct=36.0,
-        avoid_minor_leagues=False,
-        avoid_volatile_markets=False,
-        allow_underdogs=True,
-        max_picks_per_league=2,
-        preferred_markets=frozenset({"1X2", "Ambos marcan", "Total goles", "Doble oportunidad"}),
-        exceptional_odds_min=None,
-        max_exceptional_picks=0,
-        exceptional_min_ev=0.12,
-        exceptional_min_edge_pct=12.0,
-        exceptional_max_odds_cap=9.0,
-        min_combined_probability=None,
-    ),
-    "extreme": RiskProfile(
-        min_picks=5,
-        max_picks=8,
-        min_prob=0.28,
-        min_ev=0.001,
-        min_single_odds=1.06,
-        max_single_odds=80.0,
-        target_total_odds_min=12.0,
-        target_total_odds_max=500.0,
-        max_volatility=1.0,
-        min_confidence_pct=28.0,
-        avoid_minor_leagues=False,
-        avoid_volatile_markets=False,
-        allow_underdogs=True,
-        max_picks_per_league=3,
-        preferred_markets=frozenset({"1X2", "Ambos marcan", "Total goles", "Doble oportunidad"}),
-        exceptional_odds_min=None,
-        max_exceptional_picks=0,
-        exceptional_min_ev=0.12,
-        exceptional_min_edge_pct=12.0,
-        exceptional_max_odds_cap=80.0,
-        min_combined_probability=None,
-    ),
+SIMPLE_PROFILES: dict[RiskLevel, SimpleAccaProfile] = {
+    "low": SimpleAccaProfile(exact_picks=2, target_min=1.8, target_max=4.5, max_single_odds=2.2),
+    "medium": SimpleAccaProfile(exact_picks=3, target_min=3.0, target_max=10.0, max_single_odds=4.0),
+    "high": SimpleAccaProfile(exact_picks=4, target_min=8.0, target_max=20.0, max_single_odds=8.0),
+    "extreme": SimpleAccaProfile(exact_picks=5, target_min=15.0, target_max=40.0, max_single_odds=12.0),
 }
 
-
-def _volatile_market(c: AccaCandidate) -> bool:
-    if c.mercado == "1X2" and c.pick.lower() == "empate":
-        return True
-    if c.mercado == "Ambos marcan":
-        return True
-    if c.mercado == "Total goles" and "más" in c.pick.lower():
-        return True
-    return False
+# (min_prob, min_odds, max_odds, min_ev) — capas de relajación por perfil
+FilterTier = tuple[float, float, float, float]
 
 
-def _is_exceptional_odds_pick(c: AccaCandidate, profile: RiskProfile) -> bool:
-    thr = profile.exceptional_odds_min
-    if thr is None:
-        return False
-    return c.metrics.cuota > thr
+def _filter_tiers_for_risk(risk: RiskLevel, profile: SimpleAccaProfile) -> list[FilterTier]:
+    if risk == "extreme":
+        return [
+            (0.28, 1.10, profile.max_single_odds, -0.05),
+            (0.25, 1.08, profile.max_single_odds + 2.0, -0.08),
+            (0.22, 1.05, profile.max_single_odds + 4.0, -0.12),
+            (0.18, 1.05, 20.0, -0.15),
+        ]
+    if risk == "high":
+        return [
+            (0.35, 1.10, profile.max_single_odds, 0.0),
+            (0.32, 1.08, profile.max_single_odds + 1.0, -0.01),
+            (0.28, 1.05, profile.max_single_odds + 2.0, -0.03),
+            (0.25, 1.05, 12.0, -0.06),
+            (0.20, 1.05, 15.0, -0.10),
+        ]
+    if risk == "medium":
+        return [
+            (0.45, 1.15, profile.max_single_odds, 0.0),
+            (0.40, 1.12, profile.max_single_odds + 0.5, 0.0),
+            (0.35, 1.10, profile.max_single_odds + 1.0, 0.0),
+            (0.30, 1.08, profile.max_single_odds + 2.0, -0.01),
+        ]
+    return [
+        (0.45, 1.15, profile.max_single_odds, 0.0),
+        (0.40, 1.12, profile.max_single_odds + 0.3, 0.0),
+        (0.35, 1.10, profile.max_single_odds + 0.5, 0.0),
+        (0.30, 1.08, profile.max_single_odds + 1.0, -0.01),
+    ]
 
-
-def _log_pick_reject(c: AccaCandidate, reason: str) -> None:
-    logger.info(
-        "ACCA_PICK_REJECTED_BY_RISK_PROFILE fixture_id=%s mercado=%s pick=%s cuota=%s prob=%s conf=%s reason=%s",
-        c.fixture_id,
-        c.mercado,
-        c.pick,
-        round(c.metrics.cuota, 3),
-        round(c.metrics.probabilidad, 4),
-        round(c.metrics.confidence_pct, 1),
-        reason,
-    )
-
-
-def _passes_odds_bounds(c: AccaCandidate, profile: RiskProfile) -> bool:
-    m = c.metrics
-    q = m.cuota
-    if q < profile.min_single_odds:
-        _log_pick_reject(c, "odds_too_low")
-        return False
-    if q <= profile.max_single_odds:
-        return True
-    if profile.exceptional_odds_min is not None and q > profile.exceptional_odds_min:
-        if q > profile.exceptional_max_odds_cap:
-            _log_pick_reject(c, "odds_too_high_exceptional_cap")
-            return False
-        if m.ev < profile.exceptional_min_ev and m.edge_pct < profile.exceptional_min_edge_pct:
-            _log_pick_reject(c, "exceptional_odds_insufficient_edge")
-            return False
-        return True
-    _log_pick_reject(c, "odds_too_high")
-    return False
-
-
-def _first_filter_rejection(c: AccaCandidate, profile: RiskProfile) -> str | None:
-    m = c.metrics
-    if m.probabilidad < profile.min_prob:
-        return "probability_too_low"
-    if m.ev < profile.min_ev:
-        return "ev_too_low"
-    q = m.cuota
-    if q < profile.min_single_odds:
-        return "odds_too_low"
-    if q <= profile.max_single_odds:
-        pass
-    elif profile.exceptional_odds_min is not None and q > profile.exceptional_odds_min:
-        if q > profile.exceptional_max_odds_cap:
-            return "odds_too_high_exceptional_cap"
-        if m.ev < profile.exceptional_min_ev and m.edge_pct < profile.exceptional_min_edge_pct:
-            return "exceptional_odds_insufficient_edge"
-    else:
-        return "odds_too_high"
-    if m.confidence_pct < profile.min_confidence_pct:
-        return "confidence_too_low"
-    if c.volatility > profile.max_volatility:
-        return "volatility_too_high"
-    if profile.avoid_minor_leagues and candidate_is_minor(c):
-        return "minor_league"
-    if profile.avoid_volatile_markets and _volatile_market(c):
-        return "volatile_market"
-    if not profile.allow_underdogs and m.probabilidad < 0.38 and m.cuota > 3.0:
-        return "underdog_extreme"
-    if profile.min_confidence_pct >= 65.0 and m.probabilidad < 0.52 and m.cuota > 2.05:
-        return "underdog_soft_low_profile"
-    if (
-        profile.target_total_odds_max <= 5.0
-        and not profile.allow_underdogs
-        and m.cuota > 1.92
-        and m.probabilidad < 0.50
-    ):
-        return "conservative_underdog_band"
-    return None
-
-
-def _aggregate_reject_stats(candidates: list[AccaCandidate], profile: RiskProfile) -> dict[str, int]:
-    stats: dict[str, int] = defaultdict(int)
-    for c in candidates:
-        r = _first_filter_rejection(c, profile)
-        if r is None:
-            stats["passed"] += 1
-        else:
-            stats[r] += 1
-    return dict(stats)
-
-
-def _passes_filters(c: AccaCandidate, profile: RiskProfile) -> bool:
-    m = c.metrics
-    if m.probabilidad < profile.min_prob:
-        _log_pick_reject(c, "probability_too_low")
-        return False
-    if m.ev < profile.min_ev:
-        _log_pick_reject(c, "ev_too_low")
-        return False
-    if not _passes_odds_bounds(c, profile):
-        return False
-    if m.confidence_pct < profile.min_confidence_pct:
-        _log_pick_reject(c, "confidence_too_low")
-        return False
-    if c.volatility > profile.max_volatility:
-        _log_pick_reject(c, "volatility_too_high")
-        return False
-    if profile.avoid_minor_leagues and candidate_is_minor(c):
-        _log_pick_reject(c, "minor_league")
-        return False
-    if profile.avoid_volatile_markets and _volatile_market(c):
-        _log_pick_reject(c, "volatile_market")
-        return False
-    if not profile.allow_underdogs and m.probabilidad < 0.38 and m.cuota > 3.0:
-        _log_pick_reject(c, "underdog_extreme")
-        return False
-    if profile.min_confidence_pct >= 65.0 and m.probabilidad < 0.52 and m.cuota > 2.05:
-        _log_pick_reject(c, "underdog_soft_low_profile")
-        return False
-    if (
-        profile.target_total_odds_max <= 5.0
-        and not profile.allow_underdogs
-        and m.cuota > 1.92
-        and m.probabilidad < 0.50
-    ):
-        _log_pick_reject(c, "conservative_underdog_band")
-        return False
-    return True
-
-
-def _passes_filters_relaxed_low(c: AccaCandidate) -> bool:
-    p = RISK_PROFILES["low"]
-    m = c.metrics
-    if m.probabilidad < 0.48:
-        return False
-    if m.ev < 0.001:
-        return False
-    if not _passes_odds_bounds(c, p):
-        return False
-    if m.confidence_pct < 47.0:
-        return False
-    if c.volatility > 0.56:
-        return False
-    if p.avoid_volatile_markets and _volatile_market(c):
-        return False
-    if not p.allow_underdogs and m.cuota > 1.92 and m.probabilidad < 0.49:
-        return False
-    return True
-
-
-def _passes_filters_relaxed_medium(c: AccaCandidate) -> bool:
-    p = RISK_PROFILES["medium"]
-    m = c.metrics
-    if m.probabilidad < 0.30:
-        return False
-    if m.ev < 0.0008:
-        return False
-    if m.cuota < 1.02 or m.cuota > p.max_single_odds:
-        return False
-    if m.confidence_pct < 38.0:
-        return False
-    if c.volatility > 0.74:
-        return False
-    if not p.allow_underdogs and m.probabilidad < 0.33 and m.cuota > 3.3:
-        return False
-    return True
-
-
-def _passes_filters_relaxed_high(c: AccaCandidate) -> bool:
-    p = RISK_PROFILES["high"]
-    m = c.metrics
-    if m.probabilidad < 0.26:
-        return False
-    if m.ev < 0.001:
-        return False
-    if m.cuota < 1.02 or m.cuota > p.max_single_odds:
-        return False
-    if m.confidence_pct < 30.0:
-        return False
-    if c.volatility > 0.99:
-        return False
-    return True
-
-
-def _passes_filters_relaxed_extreme(c: AccaCandidate) -> bool:
-    p = RISK_PROFILES["extreme"]
-    m = c.metrics
-    if m.probabilidad < 0.24:
-        return False
-    if m.ev < 0.0005:
-        return False
-    if m.cuota < 1.02 or m.cuota > p.max_single_odds:
-        return False
-    if m.confidence_pct < 24.0:
-        return False
-    if c.volatility > 1.0:
-        return False
-    return True
-
-
-def _pick_score(c: AccaCandidate, profile: RiskProfile) -> float:
-    m = c.metrics
-    score = m.ev * 55.0 + m.edge_pct * 0.45 + m.confidence_pct * 0.42 + m.probabilidad * 48.0
-    if c.mercado in profile.preferred_markets:
-        score += 8.0
-    if c.odds_source == "bookmaker":
-        score += 5.0
-    score += c.league_quality * 12.0
-    score -= c.volatility * 22.0
-    over = max(0.0, m.cuota - profile.max_single_odds)
-    score -= over * 22.0
-    if profile.exceptional_odds_min and m.cuota > profile.exceptional_odds_min:
-        score -= (m.cuota - profile.exceptional_odds_min) * 8.0
-    return score
-
-
-def _band_aware_step_score(
-    c: AccaCandidate,
-    profile: RiskProfile,
-    selected: list[AccaCandidate],
-    trial_odds: float,
-) -> float:
-    m = c.metrics
-    n_after = len(selected) + 1
-    lo, hi = profile.target_total_odds_min, profile.target_total_odds_max
-    target_mid = math.sqrt(max(lo * hi, 1.01))
-
-    score = m.probabilidad * 58.0 + m.ev * 58.0 + m.confidence_pct * 0.36
-    score += min(14.0, max(-4.0, m.edge_pct)) * 0.22
-    score -= c.volatility * 20.0
-    if c.mercado in profile.preferred_markets:
-        score += 7.5
-    if c.odds_source == "bookmaker":
-        score += 4.0
-    score += c.league_quality * 9.0
-
-    if trial_odds > hi:
-        score -= (trial_odds - hi) * 48.0
-    elif n_after >= profile.min_picks and trial_odds < lo:
-        score -= (lo - trial_odds) * 14.0
-    elif n_after >= profile.min_picks:
-        score -= abs(math.log(trial_odds + 1e-9) - math.log(target_mid + 1e-9)) * 5.0
-
-    if hi <= 12.0:
-        score -= max(0.0, m.cuota - profile.max_single_odds * 0.85) * 2.8
-
-    return score
+RISK_LABELS: dict[RiskLevel, str] = {
+    "low": "Bajo",
+    "medium": "Medio",
+    "high": "Alto",
+    "extreme": "Muy alto",
+}
 
 
 def _combined_odds(picks: list[AccaCandidate]) -> float:
@@ -420,45 +99,6 @@ def _combined_prob(picks: list[AccaCandidate]) -> float:
     return round(p, 6)
 
 
-def _exceptional_count(selected: list[AccaCandidate], profile: RiskProfile) -> int:
-    return sum(1 for x in selected if _is_exceptional_odds_pick(x, profile))
-
-
-def _can_add_pick_exceptional_quota(
-    c: AccaCandidate,
-    profile: RiskProfile,
-    selected: list[AccaCandidate],
-) -> bool:
-    if not _is_exceptional_odds_pick(c, profile):
-        return True
-    if _exceptional_count(selected, profile) >= profile.max_exceptional_picks:
-        return False
-    return True
-
-
-def _trim_for_min_combined_probability(
-    selected: list[AccaCandidate],
-    selected_fixture_ids: set[int],
-    league_counts: dict[int, int],
-    profile: RiskProfile,
-) -> None:
-    floor = profile.min_combined_probability
-    if floor is None or not selected:
-        return
-    while len(selected) > profile.min_picks and _combined_prob(selected) < floor:
-        worst = min(selected, key=lambda x: x.metrics.probabilidad)
-        logger.info(
-            "ACCA_TRIM_FOR_COMBINED_PROB fixture_id=%s prob=%s combined_was=%s floor=%s",
-            worst.fixture_id,
-            worst.metrics.probabilidad,
-            _combined_prob(selected),
-            floor,
-        )
-        league_counts[worst.league_id] = max(0, league_counts.get(worst.league_id, 0) - 1)
-        selected_fixture_ids.discard(worst.fixture_id)
-        selected.remove(worst)
-
-
 def _aggregate_scores(picks: list[AccaCandidate]) -> tuple[float, float, float]:
     if not picks:
         return 0.0, 0.0, 0.0
@@ -473,464 +113,133 @@ def _aggregate_scores(picks: list[AccaCandidate]) -> tuple[float, float, float]:
     return round(conf, 1), round(risk, 1), round(vol * 100.0, 1)
 
 
-def _fmt_candidate_line(c: AccaCandidate, rank: int) -> str:
-    m = c.metrics
-    return (
-        f"#{rank} fid={c.fixture_id} lg={c.league_id} {c.mercado}/{c.pick} "
-        f"cuota={m.cuota:.3f} p={m.probabilidad:.4f} ev={m.ev:.5f} ev_pct={m.ev_pct:.2f} "
-        f"conf={m.confidence_pct:.1f} vol={c.volatility:.3f} src={c.odds_source}"
-    )
-
-
-def _sync_state_from_selected(
-    selected: list[AccaCandidate],
-) -> tuple[set[int], dict[int, int]]:
-    ids: set[int] = set()
-    league_counts: dict[int, int] = defaultdict(int)
-    for p in selected:
-        ids.add(p.fixture_id)
-        league_counts[p.league_id] += 1
-    return ids, dict(league_counts)
-
-
-def _clear_and_set_selected(
-    selected: list[AccaCandidate],
-    selected_fixture_ids: set[int],
-    league_counts: dict[int, int],
-    new_picks: list[AccaCandidate],
-) -> None:
-    selected.clear()
-    selected_fixture_ids.clear()
-    league_counts.clear()
-    selected.extend(new_picks)
-    ids, lc = _sync_state_from_selected(new_picks)
-    selected_fixture_ids.update(ids)
-    league_counts.update(lc)
-
-
-def _assemble_min_odds_under_cap(
-    eligible: list[AccaCandidate],
-    profile: RiskProfile,
+def _filter_pool(
+    candidates: list[AccaCandidate],
     *,
-    cap_multiplier: float = 1.0,
-    stage_log: list[str],
+    min_prob: float,
+    min_odds: float,
+    max_odds: float,
+    min_ev: float,
 ) -> list[AccaCandidate]:
-    """
-    Esqueleto: elige min_picks con fixture distinto, priorizando cuota creciente (producto mínimo),
-    respetando cap de cuota combinada = target_max * cap_multiplier.
-    """
-    cap = profile.target_total_odds_max * cap_multiplier + 1e-6
-    pool = sorted(eligible, key=lambda c: (c.metrics.cuota, -c.metrics.probabilidad, -c.metrics.ev))
     out: list[AccaCandidate] = []
-    fids: set[int] = set()
-    lc: dict[int, int] = defaultdict(int)
-    for c in pool:
-        if len(out) >= profile.min_picks:
-            break
-        if c.fixture_id in fids:
+    for c in candidates:
+        m = c.metrics
+        if m.ev < min_ev:
             continue
-        if lc[c.league_id] >= profile.max_picks_per_league:
+        if m.probabilidad < min_prob:
             continue
-        trial = _combined_odds(out + [c])
-        if trial > cap:
-            stage_log.append(
-                f"ASSEMBLY_SKIP fid={c.fixture_id} cuota={c.metrics.cuota:.3f} trial_total={trial:.3f} cap={cap:.3f}"
-            )
+        if m.cuota < min_odds or m.cuota > max_odds:
             continue
         out.append(c)
-        fids.add(c.fixture_id)
-        lc[c.league_id] += 1
-        stage_log.append(
-            f"ASSEMBLY_PICK step={len(out)} fid={c.fixture_id} cuota={c.metrics.cuota:.3f} "
-            f"running_total={_combined_odds(out):.3f}"
-        )
     return out
 
 
-def _greedy_enhance_under_cap(
-    selected: list[AccaCandidate],
-    selected_fixture_ids: set[int],
-    league_counts: dict[int, int],
-    eligible: list[AccaCandidate],
-    profile: RiskProfile,
-    *,
-    stage_log: list[str],
-    skip_counts: dict[str, int],
-) -> None:
-    """Añade picks hasta max_picks si caben bajo target_max y mejoran score."""
-    while len(selected) < profile.max_picks:
-        best_c: AccaCandidate | None = None
-        best_sc = -1e18
-        for c in eligible:
-            if c.fixture_id in selected_fixture_ids:
-                skip_counts["duplicate_fixture"] = skip_counts.get("duplicate_fixture", 0) + 1
-                continue
-            if league_counts.get(c.league_id, 0) >= profile.max_picks_per_league:
-                skip_counts["league_cap"] = skip_counts.get("league_cap", 0) + 1
-                continue
-            trial_odds = _combined_odds(selected + [c])
-            if trial_odds > profile.target_total_odds_max + 1e-6:
-                skip_counts["over_target_total"] = skip_counts.get("over_target_total", 0) + 1
-                continue
-            if not _can_add_pick_exceptional_quota(c, profile, selected):
-                skip_counts["exceptional_quota"] = skip_counts.get("exceptional_quota", 0) + 1
-                continue
-            sc = _band_aware_step_score(c, profile, selected, trial_odds)
-            if sc > best_sc:
-                best_sc = sc
-                best_c = c
-        if best_c is None:
-            stage_log.append(f"ENHANCE_STOP no_more_candidates_under_cap at_count={len(selected)}")
+def _candidate_sort_key(c: AccaCandidate) -> tuple[float, float]:
+    return (league_priority_score(c.league_id, c.liga, c.country), c.metrics.ev)
+
+
+def _select_unique_by_ev(pool: list[AccaCandidate], n: int) -> list[AccaCandidate]:
+    sorted_pool = sorted(pool, key=_candidate_sort_key, reverse=True)
+    selected: list[AccaCandidate] = []
+    fids: set[int] = set()
+    for c in sorted_pool:
+        if len(selected) >= n:
             break
-        selected.append(best_c)
-        selected_fixture_ids.add(best_c.fixture_id)
-        league_counts[best_c.league_id] = league_counts.get(best_c.league_id, 0) + 1
-        stage_log.append(
-            f"ENHANCE_PICK count={len(selected)} fid={best_c.fixture_id} cuota={best_c.metrics.cuota:.3f} "
-            f"total={_combined_odds(selected):.3f} score={best_sc:.2f}"
-        )
-
-
-def _shrink_to_max_total_odds_safe(
-    selected: list[AccaCandidate],
-    selected_fixture_ids: set[int],
-    league_counts: dict[int, int],
-    profile: RiskProfile,
-    *,
-    stage_log: list[str],
-) -> None:
-    """NUNCA baja de min_picks: solo quita picks sobrantes si total > max."""
-    before = len(selected)
-    while len(selected) > profile.min_picks and _combined_odds(selected) > profile.target_total_odds_max + 1e-6:
-        drop = max(selected, key=lambda x: x.metrics.cuota)
-        tot = _combined_odds(selected)
-        stage_log.append(
-            f"SHRINK_REMOVE fid={drop.fixture_id} cuota={drop.metrics.cuota:.3f} "
-            f"total_before={tot:.3f} why=total_over_max min_picks_floor={profile.min_picks}"
-        )
-        lid = drop.league_id
-        league_counts[lid] = max(0, league_counts.get(lid, 0) - 1)
-        selected_fixture_ids.discard(drop.fixture_id)
-        selected.remove(drop)
-    stage_log.append(
-        f"SHRINK_DONE picks_before={before} picks_after={len(selected)} total={_combined_odds(selected):.3f}"
-    )
-
-
-def _fill_min_picks_within_band(
-    selected: list[AccaCandidate],
-    selected_fixture_ids: set[int],
-    league_counts: dict[int, int],
-    eligible: list[AccaCandidate],
-    profile: RiskProfile,
-    *,
-    stage_log: list[str],
-    skip_reasons: dict[str, int],
-) -> None:
-    pool = sorted(eligible, key=lambda c: (c.metrics.cuota, -c.metrics.probabilidad, -c.metrics.ev))
-    for c in pool:
-        if len(selected) >= profile.min_picks:
-            break
-        if len(selected) >= profile.max_picks:
-            break
-        if c.fixture_id in selected_fixture_ids:
-            skip_reasons["fill_dup_fixture"] = skip_reasons.get("fill_dup_fixture", 0) + 1
-            continue
-        if league_counts.get(c.league_id, 0) >= profile.max_picks_per_league:
-            skip_reasons["fill_league_cap"] = skip_reasons.get("fill_league_cap", 0) + 1
-            continue
-        trial_odds = _combined_odds(selected + [c])
-        if trial_odds > profile.target_total_odds_max + 1e-6:
-            skip_reasons["fill_over_target_total"] = skip_reasons.get("fill_over_target_total", 0) + 1
-            continue
-        if not _can_add_pick_exceptional_quota(c, profile, selected):
-            skip_reasons["fill_exceptional_quota"] = skip_reasons.get("fill_exceptional_quota", 0) + 1
+        if c.fixture_id in fids:
             continue
         selected.append(c)
-        selected_fixture_ids.add(c.fixture_id)
-        league_counts[c.league_id] = league_counts.get(c.league_id, 0) + 1
-        stage_log.append(
-            f"FILL_ADD fid={c.fixture_id} cuota={c.metrics.cuota:.3f} count={len(selected)} "
-            f"total={_combined_odds(selected):.3f}"
-        )
-
-
-def _hard_guarantee_acca(
-    pool: list[AccaCandidate],
-    profile: RiskProfile,
-    *,
-    stage_log: list[str],
-) -> list[AccaCandidate]:
-    """
-    Último recurso: min_picks con fixture distinto, EV>0, cuota válida, sin tope de producto
-    (solo sensato si el pool upstream no está vacío).
-    """
-    usable = [c for c in pool if c.metrics.ev > 0 and c.metrics.cuota >= 1.01 and not math.isnan(c.metrics.cuota)]
-    usable.sort(key=lambda c: (c.metrics.cuota, -c.metrics.ev))
-    out: list[AccaCandidate] = []
-    fids: set[int] = set()
-    lc: dict[int, int] = defaultdict(int)
-    for c in usable:
-        if len(out) >= profile.min_picks:
-            break
-        if c.fixture_id in fids:
-            continue
-        if lc[c.league_id] >= profile.max_picks_per_league:
-            continue
-        out.append(c)
         fids.add(c.fixture_id)
-        lc[c.league_id] += 1
-        stage_log.append(
-            f"HARD_GUARANTEE_PICK step={len(out)} fid={c.fixture_id} cuota={c.metrics.cuota:.3f} "
-            f"product={_combined_odds(out):.3f}"
-        )
-    return out
+    return selected
 
 
-def _merge_eligible(
+def build_extreme_acca(
     candidates: list[AccaCandidate],
-    risk: RiskLevel,
-    profile: RiskProfile,
-) -> list[AccaCandidate]:
-    eligible = [c for c in candidates if _passes_filters(c, profile)]
-    seen: set[tuple[int, str, str]] = {(c.fixture_id, c.mercado, c.pick) for c in eligible}
-
-    def add_relaxed(pred: Callable[[AccaCandidate], bool]) -> None:
-        nonlocal eligible, seen
-        for c in candidates:
-            k = (c.fixture_id, c.mercado, c.pick)
-            if k in seen:
-                continue
-            if pred(c):
-                eligible.append(c)
-                seen.add(k)
-
-    if risk == "low" and len(eligible) < 12:
-        add_relaxed(_passes_filters_relaxed_low)
-    if risk == "medium" and len(eligible) < 18:
-        add_relaxed(_passes_filters_relaxed_medium)
-    if risk == "high" and len(eligible) < 24:
-        add_relaxed(_passes_filters_relaxed_high)
-    if risk == "extreme" and len(eligible) < 30:
-        add_relaxed(_passes_filters_relaxed_extreme)
-
-    eligible.sort(key=lambda c: _pick_score(c, profile), reverse=True)
-    return eligible
-
-
-def build_smart_acca(
-    candidates: list[AccaCandidate],
-    risk: RiskLevel,
     *,
     fixtures_in: int = 0,
 ) -> dict[str, Any]:
-    profile = RISK_PROFILES[risk]
-    reject_stats = _aggregate_reject_stats(candidates, profile)
-    pipeline_log: list[str] = []
-    skip_greedy: dict[str, int] = {}
-    fill_skips: dict[str, int] = {}
+    """
+    Perfil Muy alto: mínima lógica, siempre devuelve la mejor combinada posible.
+    Filtros: prob > 0.20, cuota > 1.15. Sin ajuste agresivo de cuota combinada.
+    """
+    n = SIMPLE_PROFILES["extreme"].exact_picks
+    profile = SIMPLE_PROFILES["extreme"]
 
     logger.info(
-        "RISK_PROFILE_START risk=%s min_picks=%s max_picks=%s target_odds=[%s,%s] fixtures_in=%s candidates_total=%s",
-        risk,
-        profile.min_picks,
-        profile.max_picks,
-        profile.target_total_odds_min,
-        profile.target_total_odds_max,
-        fixtures_in,
+        "EXTREME_START candidates=%s fixtures_in=%s",
         len(candidates),
+        fixtures_in,
     )
 
-    eligible = _merge_eligible(candidates, risk, profile)
-    top_lines = [_fmt_candidate_line(c, i + 1) for i, c in enumerate(eligible[:10])]
-    logger.info(
-        "ELIGIBLE_STAGE risk=%s eligible_count=%s top10=%s",
-        risk,
-        len(eligible),
-        " | ".join(top_lines) if top_lines else "(none)",
-    )
+    def is_valid(c: AccaCandidate) -> bool:
+        m = c.metrics
+        return m.cuota > 1.15 and m.probabilidad > 0.20 and 1.01 <= m.cuota <= 25.0
+
+    pool = [c for c in candidates if is_valid(c)]
+    ordered = sorted(pool, key=_candidate_sort_key, reverse=True)
 
     selected: list[AccaCandidate] = []
-    selected_fixture_ids: set[int] = set()
-    league_counts: dict[int, int] = defaultdict(int)
-    used_fallback = False
-    cap_mult = 1.0
+    fids: set[int] = set()
+    for c in ordered:
+        if len(selected) >= n:
+            break
+        if c.fixture_id in fids:
+            continue
+        selected.append(c)
+        fids.add(c.fixture_id)
 
-    if not eligible and candidates:
-        used_fallback = True
-        pipeline_log.append("ELIGIBLE_EMPTY using_hard_guarantee_pool_only_ev_positive")
-        guaranteed = _hard_guarantee_acca(candidates, profile, stage_log=pipeline_log)
-        _clear_and_set_selected(selected, selected_fixture_ids, league_counts, guaranteed)
-    elif eligible:
-        for mult in (1.0, 1.2, 1.45):
-            cap_mult = mult
-            assembly_log: list[str] = []
-            built = _assemble_min_odds_under_cap(eligible, profile, cap_multiplier=mult, stage_log=assembly_log)
-            pipeline_log.extend([f"ASSEMBLY_TRY cap_mult={mult}"] + assembly_log)
-            if len(built) >= profile.min_picks:
-                _clear_and_set_selected(selected, selected_fixture_ids, league_counts, built)
-                if mult > 1.0:
-                    used_fallback = True
-                    pipeline_log.append(f"ASSEMBLY_USED_SOFT_CAP mult={mult}")
+    if len(selected) < n:
+        for c in sorted(candidates, key=_candidate_sort_key, reverse=True):
+            if len(selected) >= n:
                 break
-        if len(selected) < profile.min_picks:
-            used_fallback = True
-            pipeline_log.append("ASSEMBLY_FAILED trying_hard_guarantee_on_eligible_shape")
-            hg = _hard_guarantee_acca(eligible, profile, stage_log=pipeline_log)
-            if len(hg) >= len(selected):
-                _clear_and_set_selected(selected, selected_fixture_ids, league_counts, hg)
-    elif candidates:
-        used_fallback = True
-        pipeline_log.append("ELIGIBLE_EMPTY_AFTER_STRICT_FILTERS hard_guarantee_from_full_pool")
-        guaranteed = _hard_guarantee_acca(candidates, profile, stage_log=pipeline_log)
-        _clear_and_set_selected(selected, selected_fixture_ids, league_counts, guaranteed)
+            if c.fixture_id in fids:
+                continue
+            m = c.metrics
+            if m.cuota >= 1.05 and m.probabilidad >= 0.15:
+                selected.append(c)
+                fids.add(c.fixture_id)
 
-    logger.info(
-        "ASSEMBLY_STAGE risk=%s picks=%s total_odds=%s cap_mult_used=%s log=%s",
-        risk,
-        len(selected),
-        _combined_odds(selected) if selected else 1.0,
-        cap_mult,
-        " :: ".join(pipeline_log[-12:]) if pipeline_log else "",
-    )
-
-    _greedy_enhance_under_cap(
-        selected,
-        selected_fixture_ids,
-        league_counts,
-        eligible if eligible else candidates,
-        profile,
-        stage_log=pipeline_log,
-        skip_counts=skip_greedy,
-    )
-    logger.info(
-        "GREEDY_ENHANCE_STAGE risk=%s picks=%s total=%s skip_counts=%s tail=%s",
-        risk,
-        len(selected),
-        _combined_odds(selected) if selected else 1.0,
-        skip_greedy,
-        " :: ".join([x for x in pipeline_log if x.startswith("ENHANCE_")][-8:]),
-    )
-
-    _shrink_to_max_total_odds_safe(
-        selected, selected_fixture_ids, league_counts, profile, stage_log=pipeline_log
-    )
-    logger.info(
-        "SHRINK_STAGE_1 risk=%s picks=%s total=%s events=%s",
-        risk,
-        len(selected),
-        _combined_odds(selected) if selected else 1.0,
-        " | ".join(x for x in pipeline_log if x.startswith("SHRINK_"))[-2000:],
-    )
-
-    _fill_min_picks_within_band(
-        selected,
-        selected_fixture_ids,
-        league_counts,
-        eligible if eligible else candidates,
-        profile,
-        stage_log=pipeline_log,
-        skip_reasons=fill_skips,
-    )
-    logger.info(
-        "FILL_STAGE risk=%s picks=%s total=%s skip_reasons=%s events=%s",
-        risk,
-        len(selected),
-        _combined_odds(selected) if selected else 1.0,
-        fill_skips,
-        " | ".join(x for x in pipeline_log if x.startswith("FILL_"))[-2000:],
-    )
-
-    _shrink_to_max_total_odds_safe(
-        selected, selected_fixture_ids, league_counts, profile, stage_log=pipeline_log
-    )
-    logger.info(
-        "SHRINK_STAGE_2 risk=%s picks=%s total=%s events=%s",
-        risk,
-        len(selected),
-        _combined_odds(selected) if selected else 1.0,
-        " | ".join(x for x in pipeline_log if x.startswith("SHRINK_"))[-2000:],
-    )
-
-    if len(selected) < profile.min_picks and candidates:
-        used_fallback = True
-        pipeline_log.append("POST_FILL_STILL_SHORT hard_guarantee_from_candidates")
-        hg2 = _hard_guarantee_acca(candidates, profile, stage_log=pipeline_log)
-        if len(hg2) > len(selected):
-            _clear_and_set_selected(selected, selected_fixture_ids, league_counts, hg2)
-
-    _trim_for_min_combined_probability(selected, selected_fixture_ids, league_counts, profile)
-
-    if len(selected) < profile.min_picks and candidates:
-        used_fallback = True
-        pipeline_log.append("POST_TRIM_STILL_SHORT hard_guarantee_final")
-        hg3 = _hard_guarantee_acca(candidates, profile, stage_log=pipeline_log)
-        if len(hg3) > len(selected):
-            _clear_and_set_selected(selected, selected_fixture_ids, league_counts, hg3)
+    if not selected and candidates:
+        logger.warning("EXTREME_EMPTY_FALLBACK using top fixtures by league+EV")
+        for c in sorted(candidates, key=_candidate_sort_key, reverse=True):
+            if len(selected) >= n:
+                break
+            if c.fixture_id in fids:
+                continue
+            if c.metrics.cuota >= 1.01:
+                selected.append(c)
+                fids.add(c.fixture_id)
 
     total_odds = _combined_odds(selected) if selected else 1.0
     combined_p = _combined_prob(selected)
     combined_ev = combined_p * total_odds - 1.0 if selected else 0.0
     conf, risk_score, vol_score = _aggregate_scores(selected)
 
+    message: str | None = None
+    if len(selected) >= n:
+        message = (
+            f"Combinada muy alto generada (@{total_odds:.2f}). "
+            f"Objetivo orientativo {profile.target_min:.0f}–{profile.target_max:.0f}."
+        )
+    elif len(selected) > 0:
+        message = (
+            f"Combinada parcial muy alto: {len(selected)}/{n} picks (@{total_odds:.2f})."
+        )
+    else:
+        message = "No hay suficientes partidos disponibles actualmente para armar esta combinada."
+
     logger.info(
-        "FINAL_STAGE risk=%s picks=%s total_odds=%s combined_p=%s combined_ev=%s conf=%s "
-        "used_budget_fallback=%s fill_skip_reasons=%s pipeline_tail=%s",
-        risk,
+        "EXTREME_FINAL picks=%s total_odds=%s",
         len(selected),
         total_odds,
-        combined_p,
-        round(combined_ev, 5),
-        conf,
-        used_fallback,
-        fill_skips,
-        " :: ".join(pipeline_log[-15:]),
     )
-
-    avg_pick_probability = (
-        sum(p.metrics.probabilidad for p in selected) / len(selected) if selected else 0.0
-    )
-    average_pick_odds = sum(p.metrics.cuota for p in selected) / len(selected) if selected else 0.0
-    highest_pick_odds = max((p.metrics.cuota for p in selected), default=0.0)
-    uniq = {p.fixture_id for p in selected}
-    risk_profile_validation: dict[str, Any] = {
-        "unique_fixtures_matches_picks": len(uniq) == len(selected),
-        "combined_probability": combined_p,
-        "combined_probability_floor": profile.min_combined_probability,
-        "combined_probability_ok": (
-            profile.min_combined_probability is None
-            or not selected
-            or combined_p >= profile.min_combined_probability
-            or len(selected) <= profile.min_picks
-        ),
-        "exceptional_picks_used": _exceptional_count(selected, profile),
-        "max_exceptional_picks": profile.max_exceptional_picks,
-        "target_total_odds_min": profile.target_total_odds_min,
-        "target_total_odds_max": profile.target_total_odds_max,
-        "total_odds_within_target_max": total_odds <= profile.target_total_odds_max + 0.002,
-        "total_odds_above_target_min": total_odds + 0.002 >= profile.target_total_odds_min
-        or len(selected) < profile.min_picks,
-        "fixtures_in_schedule": fixtures_in,
-        "filter_reject_stats": reject_stats,
-        "min_picks_satisfied": len(selected) >= profile.min_picks,
-        "used_budget_fallback": used_fallback,
-        "pipeline_log_tail": pipeline_log[-40:],
-        "greedy_enhance_skip_counts": skip_greedy,
-        "fill_skip_reasons": fill_skips,
-    }
 
     return {
-        "risk": risk,
-        "risk_label": {
-            "low": "Bajo",
-            "medium": "Medio",
-            "high": "Alto",
-            "extreme": "Muy alto",
-        }[risk],
+        "risk": "extreme",
+        "risk_label": RISK_LABELS["extreme"],
         "profile": {
-            "min_picks": profile.min_picks,
-            "max_picks": profile.max_picks,
-            "target_odds_range": f"{profile.target_total_odds_min} – {profile.target_total_odds_max}",
+            "min_picks": n,
+            "max_picks": n,
+            "target_odds_range": f"{profile.target_min} – {profile.target_max}",
         },
         "picks": selected,
         "total_odds": total_odds,
@@ -941,11 +250,271 @@ def build_smart_acca(
         "risk_score": risk_score,
         "volatility_score": vol_score,
         "candidates_pool_size": len(candidates),
-        "eligible_count": len(eligible),
-        "average_pick_probability": round(avg_pick_probability, 5),
-        "average_pick_odds": round(average_pick_odds, 3),
-        "highest_pick_odds": round(highest_pick_odds, 3),
-        "risk_profile_validation": risk_profile_validation,
+        "eligible_count": len(pool),
+        "message": message,
+        "risk_profile_validation": {
+            "exact_picks_required": n,
+            "exact_picks_met": len(selected) >= n,
+            "fixtures_in_schedule": fixtures_in,
+        },
+    }
+
+
+def _build_pool_with_relaxation(
+    candidates: list[AccaCandidate],
+    profile: SimpleAccaProfile,
+    risk: RiskLevel,
+) -> list[AccaCandidate]:
+    """Capas de relajación hasta tener al menos exact_picks fixtures distintos."""
+    for min_prob, min_odds, max_odds, min_ev in _filter_tiers_for_risk(risk, profile):
+        pool = _filter_pool(
+            candidates,
+            min_prob=min_prob,
+            min_odds=min_odds,
+            max_odds=max_odds,
+            min_ev=min_ev,
+        )
+        uniq_fixtures = len({c.fixture_id for c in pool})
+        if uniq_fixtures >= profile.exact_picks:
+            return pool
+    # Último recurso: cuotas válidas; en alto/muy alto aceptamos EV bajo para completar demo
+    min_ev_floor = -0.15 if risk in ("high", "extreme") else -0.05
+    max_odds_cap = profile.max_single_odds + (8.0 if risk == "extreme" else 5.0)
+    return [
+        c
+        for c in candidates
+        if c.metrics.ev >= min_ev_floor
+        and c.metrics.cuota >= 1.05
+        and c.metrics.cuota <= max_odds_cap
+    ]
+
+
+def _fill_to_exact_picks(
+    selected: list[AccaCandidate],
+    candidates: list[AccaCandidate],
+    n: int,
+    *,
+    risk: RiskLevel,
+) -> list[AccaCandidate]:
+    """Completa hasta N picks únicos por fixture; prioriza EV, luego probabilidad."""
+    if len(selected) >= n:
+        return selected[:n]
+    work = list(selected)
+    used: set[int] = {p.fixture_id for p in work}
+
+    def rank(c: AccaCandidate) -> tuple[float, float]:
+        return (c.metrics.ev, c.metrics.probabilidad)
+
+    min_prob = 0.28 if risk == "extreme" else (0.35 if risk == "high" else 0.20)
+    min_odds = 1.10 if risk in ("high", "extreme") else 1.05
+    min_ev = -0.20 if risk == "extreme" else (-0.10 if risk == "high" else -0.05)
+
+    ordered = sorted(candidates, key=rank, reverse=True)
+    for c in ordered:
+        if len(work) >= n:
+            break
+        if c.fixture_id in used:
+            continue
+        m = c.metrics
+        if m.probabilidad < min_prob or m.cuota < min_odds or m.ev < min_ev:
+            continue
+        work.append(c)
+        used.add(c.fixture_id)
+
+    if len(work) < n:
+        for c in ordered:
+            if len(work) >= n:
+                break
+            if c.fixture_id in used:
+                continue
+            if c.metrics.cuota >= 1.05:
+                work.append(c)
+                used.add(c.fixture_id)
+
+    return work[:n]
+
+
+def _adjust_total_odds(
+    selected: list[AccaCandidate],
+    pool: list[AccaCandidate],
+    profile: SimpleAccaProfile,
+) -> list[AccaCandidate]:
+    """Sustituye picks (mismo tamaño) para acercar la cuota combinada a la banda objetivo."""
+    n = profile.exact_picks
+    if len(selected) != n:
+        return selected
+
+    work = list(selected)
+    min_t, max_t = profile.target_min, profile.target_max
+
+    for _ in range(80):
+        total = _combined_odds(work)
+        if min_t <= total <= max_t:
+            return work
+
+        fids = {p.fixture_id for p in work}
+        improved = False
+
+        if total < min_t:
+            replace_i = min(range(n), key=lambda i: work[i].metrics.cuota)
+            current = work[replace_i].metrics.cuota
+            best: AccaCandidate | None = None
+            best_total = total
+            for c in pool:
+                if c.fixture_id in fids:
+                    continue
+                trial = list(work)
+                trial[replace_i] = c
+                t = _combined_odds(trial)
+                if t > best_total and t <= max_t * 1.05:
+                    best = c
+                    best_total = t
+            if best is not None:
+                work[replace_i] = best
+                fids = {p.fixture_id for p in work}
+                improved = True
+
+        elif total > max_t:
+            replace_i = max(range(n), key=lambda i: work[i].metrics.cuota)
+            current = work[replace_i].metrics.cuota
+            best: AccaCandidate | None = None
+            best_total = total
+            for c in pool:
+                if c.fixture_id in fids:
+                    continue
+                if c.metrics.cuota >= current:
+                    continue
+                trial = list(work)
+                trial[replace_i] = c
+                t = _combined_odds(trial)
+                if t < best_total and t >= min_t * 0.95:
+                    best = c
+                    best_total = t
+            if best is not None:
+                work[replace_i] = best
+                fids = {p.fixture_id for p in work}
+                improved = True
+
+        if not improved:
+            break
+
+    return work
+
+
+def build_simple_acca(
+    candidates: list[AccaCandidate],
+    risk: RiskLevel,
+    *,
+    fixtures_in: int = 0,
+) -> dict[str, Any]:
+    if risk == "extreme":
+        return build_extreme_acca(candidates, fixtures_in=fixtures_in)
+
+    profile = SIMPLE_PROFILES[risk]
+    n = profile.exact_picks
+
+    logger.info(
+        "RISK_PROFILE_START risk=%s exact_picks=%s target=[%.2f,%.2f] fixtures_in=%s candidates_total=%s",
+        risk,
+        n,
+        profile.target_min,
+        profile.target_max,
+        fixtures_in,
+        len(candidates),
+    )
+
+    pool = _build_pool_with_relaxation(candidates, profile, risk)
+    eligible_count = len(pool)
+    top = sorted(pool, key=lambda c: c.metrics.ev, reverse=True)[:10]
+    logger.info(
+        "ELIGIBLE_STAGE risk=%s eligible_count=%s top10=%s",
+        risk,
+        eligible_count,
+        " | ".join(
+            f"fid={c.fixture_id} cuota={c.metrics.cuota:.2f} p={c.metrics.probabilidad:.3f} "
+            f"ev={c.metrics.ev:.4f} conf={c.metrics.confidence_pct:.0f}"
+            for c in top
+        )
+        or "(none)",
+    )
+
+    selected = _select_unique_by_ev(pool, n)
+    logger.info(
+        "GREEDY_STAGE risk=%s picks_selected=%s combined_odds=%s",
+        risk,
+        len(selected),
+        _combined_odds(selected) if selected else 1.0,
+    )
+
+    if len(selected) < n:
+        logger.info("FILL_STAGE risk=%s filling_from_candidates", risk)
+        selected = _fill_to_exact_picks(selected, pool if pool else candidates, n, risk=risk)
+
+    before_adj = list(selected)
+    adjust_pool = pool if pool else candidates
+    if len(selected) == n:
+        selected = _adjust_total_odds(selected, adjust_pool, profile)
+    logger.info(
+        "ADJUST_STAGE risk=%s before_odds=%s after_odds=%s picks=%s",
+        risk,
+        _combined_odds(before_adj) if before_adj else 1.0,
+        _combined_odds(selected) if selected else 1.0,
+        len(selected),
+    )
+
+    total_odds = _combined_odds(selected) if selected else 1.0
+    combined_p = _combined_prob(selected)
+    combined_ev = combined_p * total_odds - 1.0 if selected else 0.0
+    conf, risk_score, vol_score = _aggregate_scores(selected)
+
+    insufficient = len(selected) < n
+    message: str | None = None
+    if insufficient:
+        message = (
+            "No hay suficientes partidos disponibles actualmente para armar esta combinada. "
+            f"Se encontraron {len(selected)} de {n} picks requeridos."
+        )
+    elif not (profile.target_min <= total_odds <= profile.target_max):
+        message = (
+            f"Combinada generada con cuota @{total_odds:.2f} "
+            f"(objetivo {profile.target_min:.1f}–{profile.target_max:.1f})."
+        )
+
+    logger.info(
+        "FINAL_STAGE risk=%s picks=%s total_odds=%s combined_p=%s combined_ev_pct=%.2f conf=%s ok=%s",
+        risk,
+        len(selected),
+        total_odds,
+        combined_p,
+        combined_ev * 100.0,
+        conf,
+        not insufficient and len(selected) >= n,
+    )
+
+    return {
+        "risk": risk,
+        "risk_label": RISK_LABELS[risk],
+        "profile": {
+            "min_picks": n,
+            "max_picks": n,
+            "target_odds_range": f"{profile.target_min} – {profile.target_max}",
+        },
+        "picks": selected,
+        "total_odds": total_odds,
+        "combined_probability": combined_p,
+        "combined_ev": round(combined_ev, 5),
+        "combined_ev_pct": round(combined_ev * 100.0, 2),
+        "confidence_score": conf,
+        "risk_score": risk_score,
+        "volatility_score": vol_score,
+        "candidates_pool_size": len(candidates),
+        "eligible_count": eligible_count,
+        "message": message,
+        "risk_profile_validation": {
+            "exact_picks_required": n,
+            "exact_picks_met": len(selected) == n,
+            "fixtures_in_schedule": fixtures_in,
+        },
     }
 
 
@@ -954,12 +523,25 @@ def resolve_acca_calendar_day_for_pre_match(
     requested: date,
     *,
     now_utc: datetime | None = None,
-    max_extra_days: int = 3,
+    max_extra_days: int = 1,
 ) -> tuple[date, int, bool]:
+    """
+    Elige el día con más fixtures pre-partido entre hoy y hasta +max_extra_days.
+    Reutiliza caché en memoria; como máximo 2 peticiones HTTP en frío (hoy + mañana).
+    """
     now = now_utc or datetime.now(timezone.utc)
-    for offset in range(max_extra_days + 1):
+    best_day = requested
+    best_count = 0
+    scan_days = min(max_extra_days, 1) + 1
+
+    for offset in range(scan_days):
         day = requested + timedelta(days=offset)
-        payload = fetch_fixtures_by_date_cached(settings, day)
+        peeked = peek_fixtures_cache(day)
+        if peeked is not None:
+            payload = peeked
+        else:
+            payload = fetch_fixtures_by_date_cached(settings, day)
+
         fixtures = payload.get("response") or []
         if not isinstance(fixtures, list):
             fixtures = []
@@ -969,9 +551,12 @@ def resolve_acca_calendar_day_for_pre_match(
             min_minutes_before_kickoff=settings.acca_min_minutes_before_kickoff,
             emit_trace_log=False,
         )
-        if filtered:
-            return day, len(filtered), day > requested
-    return requested, 0, False
+        n = len(filtered)
+        if n > best_count:
+            best_count = n
+            best_day = day
+
+    return best_day, best_count, best_day > requested
 
 
 def generate_acca_for_date(
@@ -982,14 +567,16 @@ def generate_acca_for_date(
     fetch_odds: bool = True,
 ) -> dict[str, Any]:
     payload = fetch_fixtures_by_date_cached(settings, day)
+    upstream_meta = extract_cache_meta(payload)
     fixtures = payload.get("response") or []
     if not isinstance(fixtures, list):
         fixtures = []
 
     logger.info(
-        "ACCA_GENERATE fixtures_source=api_football date=%s upstream_count=%s",
+        "ACCA_GENERATE date=%s upstream_fixtures=%s risk=%s",
         day.isoformat(),
         len(fixtures),
+        risk,
     )
 
     now_utc = datetime.now(timezone.utc)
@@ -999,22 +586,24 @@ def generate_acca_for_date(
         min_minutes_before_kickoff=settings.acca_min_minutes_before_kickoff,
     )
 
+    max_fx = 120 if risk in ("high", "extreme") else 72
+    fetch_eff = fetch_odds
+    if risk == "extreme":
+        # Evita timeouts por muchas llamadas a /odds; cuotas sintéticas estables.
+        fetch_eff = False
     pool = build_acca_candidate_pool(
         filtered,
         settings,
-        fetch_odds=fetch_odds,
-        max_fixtures=72,
+        fetch_odds=fetch_eff,
+        max_fixtures=max_fx,
         now_utc=now_utc,
     )
-    logger.info(
-        "ACCA_GENERATE after_schedule_filter=%s candidate_pool_size=%s",
-        len(filtered),
-        len(pool),
-    )
-    built = build_smart_acca(pool, risk, fixtures_in=len(filtered))
+
+    built = build_simple_acca(pool, risk, fixtures_in=len(filtered))
+    selected: list[AccaCandidate] = built["picks"]
 
     picks_out = []
-    for p in built["picks"]:
+    for p in selected:
         m = p.metrics
         picks_out.append(
             {
@@ -1039,17 +628,10 @@ def generate_acca_for_date(
 
     bookmaker_picks = sum(1 for x in picks_out if x["odds_source"] == "bookmaker")
     unique_fids = {int(x["fixture_id"]) for x in picks_out if isinstance(x.get("fixture_id"), int)}
-    unique_fixtures_count = len(unique_fids)
-    if unique_fixtures_count != len(picks_out):
-        logger.warning(
-            "ACCA_FIXTURE_UNIQUENESS_MISMATCH pick_count=%s unique_fixtures=%s",
-            len(picks_out),
-            unique_fixtures_count,
-        )
 
     return {
         "date": day.isoformat(),
-        "model_version": "poisson-v1+ev-v1",
+        "model_version": "poisson-v1+ev-simple",
         "risk": built["risk"],
         "risk_label": built["risk_label"],
         "profile": built["profile"],
@@ -1062,11 +644,12 @@ def generate_acca_for_date(
         "confidence_score": built["confidence_score"],
         "risk_score": built["risk_score"],
         "volatility_score": built["volatility_score"],
+        "message": built.get("message"),
         "meta": {
             "candidates_pool_size": built["candidates_pool_size"],
             "eligible_after_filters": built["eligible_count"],
             "bookmaker_odds_picks": bookmaker_picks,
-            "independence_assumption": "P(combinada) ≈ ∏ P(picks); preparado para correlación/ML.",
+            "independence_assumption": "P(combinada) ≈ ∏ P(picks).",
             "fetch_odds": fetch_odds,
             "fixtures_upstream_total": len(fixtures),
             "fixtures_after_schedule_filter": len(filtered),
@@ -1077,12 +660,15 @@ def generate_acca_for_date(
             "requested_date": day.isoformat(),
             "resolved_date": day.isoformat(),
             "auto_shifted_date": False,
-            "unique_fixtures_count": unique_fixtures_count,
-            "average_pick_probability": built.get("average_pick_probability", 0.0),
-            "average_pick_odds": built.get("average_pick_odds", 0.0),
-            "highest_pick_odds": built.get("highest_pick_odds", 0.0),
+            "unique_fixtures_count": len(unique_fids),
             "risk_profile_validation": built.get("risk_profile_validation") or {},
             "persist_status": "not_attempted",
             "persist_error": None,
+            "upstream_warning": upstream_meta.warning,
+            "cache_stale": upstream_meta.stale,
         },
     }
+
+
+# Compatibilidad con imports existentes
+build_smart_acca = build_simple_acca

@@ -13,6 +13,9 @@ import hashlib
 import struct
 from typing import Any, Literal
 
+from app.services.league_format import format_league_display
+from app.services.league_priority import league_priority_score
+
 # Convención API-Football: teams.home = local, teams.away = visitante.
 # 1X2: "Victoria local" = home; "Victoria visitante" = away.
 # Doble oportunidad: 1X = local o empate; X2 = empate o visitante (probs derivadas del mismo trío 1X2).
@@ -269,7 +272,7 @@ def _mock_target_ev(seed: str) -> float:
 
     jitter = (_u01(seed + ":jz") - 0.5) * 0.007
     ev_t = float(ev_core + jitter)
-    ev_t = max(0.018, min(0.205, ev_t))
+    ev_t = max(0.008, min(0.22, ev_t))
     return ev_t
 
 
@@ -278,33 +281,33 @@ def _coherent_quote(probabilidad: float, ev_target: float) -> tuple[float, float
     if probabilidad <= 0 or probabilidad >= 1:
         return None
     raw = (1.0 + ev_target) / probabilidad
-    if not (1.12 <= raw <= 10.0):
+    if not (1.08 <= raw <= 12.0):
         return None
 
     cuota = round(raw, 2)
     ev = round(probabilidad * cuota - 1.0, 4)
 
-    if ev < 0.018:
-        for _ in range(12):
+    if ev < 0.008:
+        for _ in range(16):
             cuota = round(cuota + 0.01, 2)
-            if cuota > 12.0:
+            if cuota > 15.0:
                 return None
             ev = round(probabilidad * cuota - 1.0, 4)
-            if ev >= 0.018:
+            if ev >= 0.008:
                 break
         else:
             return None
 
-    if ev > 0.212:
-        for _ in range(18):
+    if ev > 0.24:
+        for _ in range(20):
             cuota = round(cuota - 0.01, 2)
             if cuota < 1.05:
                 return None
             ev = round(probabilidad * cuota - 1.0, 4)
-            if ev <= 0.205:
+            if ev <= 0.22:
                 break
 
-    if ev < 0.018 or ev > 0.212:
+    if ev < 0.008 or ev > 0.24:
         return None
     return cuota, ev
 
@@ -335,7 +338,7 @@ def _try_quote_with_ev_ladder(prob: float, seed: str, cap: float) -> tuple[float
     """Intenta varios EV objetivos (de mayor a menor) hasta obtener cuota válida."""
     ev0 = min(_mock_target_ev(seed + ":tgt"), cap)
     for scale in (1.0, 0.82, 0.64, 0.48, 0.035):
-        ev_t = max(0.018, min(cap, ev0 * scale))
+        ev_t = max(0.008, min(cap, ev0 * scale))
         cq = _coherent_quote(prob, ev_t)
         if cq:
             return cq
@@ -398,10 +401,20 @@ def _best_exclusive_among_arms(
     return best
 
 
+def _fixture_priority(item: dict[str, Any]) -> float:
+    league = item.get("league") if isinstance(item.get("league"), dict) else {}
+    lid = int(league.get("id")) if isinstance(league.get("id"), int) else 0
+    name = (league.get("name") or "") if isinstance(league.get("name"), str) else ""
+    country = (league.get("country") or "") if isinstance(league.get("country"), str) else ""
+    return league_priority_score(lid, name, country)
+
+
 def build_mock_positive_ev_picks(fixtures: list[Any]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
+    items = [x for x in fixtures if isinstance(x, dict)]
+    items.sort(key=_fixture_priority, reverse=True)
 
-    for item in fixtures:
+    for item in items:
         base = _parse_fixture_row(item)
         if not base:
             continue

@@ -60,6 +60,12 @@
       "namedRegex": "^/favicon\\.ico(?:/)?$"
     },
     {
+      "page": "/legal",
+      "regex": "^/legal(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/legal(?:/)?$"
+    },
+    {
       "page": "/matches",
       "regex": "^/matches(?:/)?$",
       "routeKeys": {},

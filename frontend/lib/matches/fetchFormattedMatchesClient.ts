@@ -30,10 +30,12 @@ export function fetchFormattedMatchesOnce(): Promise<FormattedMatch[]> {
   inflight = (async () => {
     const res = await fetch(`${MATCHES_BASE_URL}/matches`, { cache: "no-store" });
     if (!res.ok) {
-      throw new Error(`HTTP ${res.status} al llamar ${MATCHES_BASE_URL}/matches`);
+      console.warn(`[matches] HTTP ${res.status} — lista vacía para no romper la demo`);
+      cache = [];
+      return [];
     }
     const data = (await res.json()) as MatchesApiPayload;
-    const clean = formatMatches(data.raw_fixtures);
+    const clean = formatMatches(data.raw_fixtures ?? []);
     cache = clean;
     return clean;
   })();

@@ -37,3 +37,5 @@ class ValueBetsResponse(BaseModel):
     source: str = Field(default="mock-ev", description="Origen del cálculo (mock hasta modelo real).")
     picks_count: int
     picks: list[ValueBetPick]
+    upstream_warning: str | None = None
+    cache_stale: bool = False

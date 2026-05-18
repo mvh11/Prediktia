@@ -39,39 +39,33 @@ export type SmartAccaResponse = {
   risk_score: number;
   volatility_score: number;
   meta: {
-    candidates_pool_size: number;
-    eligible_after_filters: number;
-    bookmaker_odds_picks: number;
-    independence_assumption: string;
-    fetch_odds: boolean;
-    fixtures_upstream_total?: number;
-    fixtures_after_schedule_filter?: number;
-    schedule_discard_reasons?: Record<string, number>;
-    fixtures_source?: string;
+    candidates_pool_size?: number;
+    eligible_after_filters?: number;
+    bookmaker_odds_picks?: number;
     requested_date?: string;
     resolved_date?: string;
     auto_shifted_date?: boolean;
+    persist_status?: string;
   };
   message?: string | null;
   acca_id?: string | null;
 };
 
-export type AccaSettlementStatus = "pending" | "won" | "lost";
-
 export type AccaHistoryItem = {
+  id: string;
   acca_id: string;
+  created_at: string;
   date: string;
   risk: string;
   risk_label: string;
   total_odds: number;
-  combined_ev_pct: number;
-  confidence_score: number;
-  pick_count: number;
-  created_at: string;
-  status: AccaSettlementStatus;
-  result?: string | null;
-  roi?: number | null;
-  model_version: string;
+  total_ev: number;
+  combined_ev_pct?: number;
+  confidence: number;
+  confidence_score?: number;
+  picks_count: number;
+  pick_count?: number;
+  status: "pending";
 };
 
 export type AccaHistoryListResponse = {

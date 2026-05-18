@@ -197,8 +197,8 @@ const STEPS = [
   },
   {
     n: "04",
-    title: "Trackeamos ROI automáticamente",
-    body: "Historial y liquidación para medir lo que importa.",
+    title: "Guardamos tu historial",
+    body: "Combinadas generadas con fecha, cuota y EV para tu demo.",
     icon: "▣",
   },
 ] as const;
@@ -258,7 +258,7 @@ export function HomeLanding({ data }: { data: HomePageData }) {
           ) : null}
 
           <div className="mx-auto mt-14 grid max-w-4xl grid-cols-2 gap-4 sm:grid-cols-4">
-            <MetricMini label="ROI" value="—" sub="Historial liquidado (próximo)" accent="emerald" />
+            <MetricMini label="ACCAs" value={accas} sub="Combinadas en historial" accent="emerald" />
             <MetricMini label="Hitrate" value="—" sub="Métricas en vivo (próximo)" accent="amber" />
             <MetricMini
               label="Partidos analizados"
@@ -320,10 +320,10 @@ export function HomeLanding({ data }: { data: HomePageData }) {
         <section className="mt-28 sm:mt-32">
           <h2 className="text-center text-2xl font-bold tracking-tight sm:text-3xl">Rendimiento y credibilidad</h2>
           <p className="mx-auto mt-2 max-w-lg text-center text-sm text-zinc-500">
-            KPIs reales donde el backend ya expone datos; el resto se conecta al settlement sin inflar números.
+            KPIs reales donde el backend ya expone datos; sin métricas inventadas.
           </p>
           <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <DashStat label="ROI últimos 30 días" value="—" hint="Liquidación automática" />
+            <DashStat label="EV medio del día" value={evMedio} hint="Picks del motor value" />
             <DashStat label="ACCA generadas" value={accas} hint="Historial reciente (API)" />
             <DashStat label="Picks acertados" value="—" hint="Post-resultado (en roadmap)" />
             <DashStat label="Yield" value="—" hint="Sobre bankroll simulado" />

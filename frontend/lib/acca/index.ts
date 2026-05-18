@@ -5,6 +5,5 @@ export type {
   AccaHistoryListResponse,
   AccaPick,
   AccaRiskLevel,
-  AccaSettlementStatus,
   SmartAccaResponse,
 } from "./types";

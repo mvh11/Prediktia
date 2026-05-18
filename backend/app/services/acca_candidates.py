@@ -11,9 +11,11 @@ from typing import Any, Literal
 
 from app.config import Settings
 from app.services.ev_engine import EvMetrics, compute_ev_metrics
+from app.services.league_format import format_league_display
+from app.services.league_priority import league_priority_score
 from app.services.acca_fixture_filter import kickoff_in_minutes_from_now
 from app.services.acca_odds import extract_market_odds
-from app.services.football_api import FootballApiError, fetch_odds_by_fixture
+from app.services.football_api import fetch_odds_by_fixture_cached
 from app.services.poisson import analyze_fixture_poisson
 
 logger = logging.getLogger(__name__)
@@ -92,17 +94,16 @@ def _market_stability(mercado: str, pick: str) -> float:
 
 
 def _synthetic_odds(prob: float, margin: float = 0.05) -> float:
-    """Cuota fair con margen book cuando no hay upstream."""
+    """
+    Cuota estimada cuando no hay bookmaker.
+    Incluye un pequeño edge (~2–4% EV) para poder armar combinadas en demo sin cuotas reales.
+    """
     p = max(0.02, min(0.96, prob))
-    return round((1.0 - margin) / p, 2)
+    return round(max(1.12, (1.0 - margin + 0.06) / p), 2)
 
 
 def _format_liga(name: str, country: str) -> str:
-    if not country.strip():
-        return name
-    if country.lower() in name.lower():
-        return name
-    return f"{name} ({country})"
+    return format_league_display(name, country)
 
 
 def _candidates_from_fixture(
@@ -159,7 +160,11 @@ def _candidates_from_fixture(
         cuota, source = resolve(book_odd, prob)
         stab = _market_stability(mercado, pick)
         m = compute_ev_metrics(prob, cuota, market_stability=stab, league_quality=lq)
-        if m is None or m.ev <= 0:
+        if m is None:
+            return
+        if m.ev <= 0 and source == "bookmaker":
+            return
+        if m.ev <= -0.08:
             return
         out.append(
             AccaCandidate(
@@ -205,27 +210,32 @@ def build_acca_candidate_pool(
     *,
     fetch_odds: bool = True,
     max_fixtures: int = 40,
+    max_odds_fetches: int = 20,
     now_utc: datetime | None = None,
 ) -> list[AccaCandidate]:
     """
     `fixtures` debe llegar ya filtrado y ordenado (p. ej. por acca_fixture_filter).
-    Limita cantidad de fixtures para no saturar la API de cuotas.
+    Limita cantidad de fixtures y de peticiones /odds (caché compartida, máx. max_odds_fetches).
     """
     pool: list[AccaCandidate] = []
     n = 0
+    odds_used = 0
     for item in fixtures:
         if n >= max_fixtures:
             break
         if not isinstance(item, dict):
             continue
+        use_odds = fetch_odds and settings is not None and odds_used < max_odds_fetches
         pool.extend(
             _candidates_from_fixture(
                 item,
-                fetch_odds=fetch_odds,
+                fetch_odds=use_odds,
                 settings=settings,
                 now_utc=now_utc,
             )
         )
+        if use_odds:
+            odds_used += 1
         n += 1
     logger.info(
         "acca_candidate_pool fixtures_in=%s candidates_out=%s max_fixtures=%s fetch_odds=%s",

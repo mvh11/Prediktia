@@ -6,7 +6,7 @@ import hashlib
 import logging
 import uuid
 from datetime import date, datetime, timezone
-from typing import Any, Literal
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -17,9 +17,6 @@ from app.db.models import AccaHistoryRow, FixtureRow, PredictionRow
 from app.db.session import session_scope
 
 logger = logging.getLogger(__name__)
-
-SettleResult = Literal["ok", "not_found", "unavailable", "error"]
-
 
 def _parse_kickoff_utc(raw: str | None) -> datetime | None:
     if not isinstance(raw, str) or not raw.strip():
@@ -108,9 +105,6 @@ def persist_smart_acca(settings: Settings, result: dict[str, Any]) -> tuple[str 
                 model_version=str(result.get("model_version") or ""),
                 picks_json=result.get("picks") or [],
                 status="pending",
-                result="pending",
-                roi=None,
-                settled_at=None,
             )
             db.add(row)
             db.flush()
@@ -285,6 +279,7 @@ def list_acca_history(settings: Settings, *, limit: int = 50) -> list[dict[str, 
                 st = getattr(r, "status", None) or "pending"
                 items.append(
                     {
+                        "id": r.acca_id,
                         "acca_id": r.acca_id,
                         "date": r.fixture_date.isoformat() if r.fixture_date else "",
                         "risk": r.risk_profile,
@@ -295,14 +290,14 @@ def list_acca_history(settings: Settings, *, limit: int = 50) -> list[dict[str, 
                             "extreme": "Muy alto",
                         }.get(r.risk_profile, r.risk_profile),
                         "total_odds": float(r.total_odds),
+                        "total_ev": float(r.combined_ev_pct),
                         "combined_ev_pct": float(r.combined_ev_pct),
+                        "confidence": float(r.confidence_score),
                         "confidence_score": float(r.confidence_score),
+                        "picks_count": len(picks),
                         "pick_count": len(picks),
                         "created_at": r.created_at.isoformat() if r.created_at else "",
-                        "status": st,
-                        "result": r.result,
-                        "roi": float(r.roi) if r.roi is not None else None,
-                        "settled_at": r.settled_at.isoformat() if getattr(r, "settled_at", None) else None,
+                        "status": st if st in ("pending",) else "pending",
                         "model_version": r.model_version or "",
                     }
                 )
@@ -310,35 +305,3 @@ def list_acca_history(settings: Settings, *, limit: int = 50) -> list[dict[str, 
     except Exception:
         logger.exception("list_acca_history: error al leer DB; se devuelve historial vacío.")
         return []
-
-
-def settle_acca_history(
-    settings: Settings,
-    acca_id: str,
-    *,
-    status: str,
-    roi: float | None = None,
-) -> SettleResult:
-    """Actualiza estado de liquidación (pending / won / lost) y ROI opcional."""
-    if not settings.database_url:
-        return "unavailable"
-    if status not in ("pending", "won", "lost"):
-        return "error"
-    try:
-        with session_scope(settings.database_url) as db:
-            if db is None:
-                return "unavailable"
-            row = db.get(AccaHistoryRow, acca_id)
-            if row is None:
-                return "not_found"
-            row.status = status
-            row.result = status
-            if roi is not None:
-                row.roi = float(roi)
-            if status in ("won", "lost") and getattr(row, "settled_at", None) is None:
-                row.settled_at = datetime.now(timezone.utc)
-    except Exception:
-        logger.exception("settle_acca_history: falló actualización acca_id=%s", acca_id)
-        return "error"
-    logger.info("ACCA settled acca_id=%s status=%s roi=%s", acca_id, status, roi)
-    return "ok"

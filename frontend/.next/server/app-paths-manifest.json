@@ -4,6 +4,7 @@
   "/acca/page": "app/acca/page.js",
   "/dev/format-matches/page": "app/dev/format-matches/page.js",
   "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/legal/page": "app/legal/page.js",
   "/matches/page": "app/matches/page.js",
   "/page": "app/page.js",
   "/planes/page": "app/planes/page.js",

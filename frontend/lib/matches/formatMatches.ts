@@ -16,6 +16,21 @@ function readString(value: unknown): string | undefined {
   return undefined;
 }
 
+/** Mismo formato que Value EV: `Premier League (England)`. */
+export function formatLeagueDisplay(leagueName: string, country: string): string {
+  const name = leagueName.trim() || "—";
+  const c = country.trim();
+  if (!c) {
+    return name;
+  }
+  const nl = name.toLowerCase();
+  const cl = c.toLowerCase();
+  if (nl.includes(cl)) {
+    return name;
+  }
+  return `${name} (${c})`;
+}
+
 function readNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined) {
     return null;
@@ -59,8 +74,9 @@ function mapSingle(item: unknown, index: number): FormattedMatch {
   const fixture = row.fixture;
   const fixtureId = fixture?.id;
   const fecha = readString(fixture?.date);
-  const liga = readString(row.league?.name) ?? "—";
-  const pais = readString(row.league?.country) ?? "—";
+  const leagueName = readString(row.league?.name) ?? "—";
+  const pais = readString(row.league?.country) ?? "";
+  const liga = formatLeagueDisplay(leagueName, pais);
   const equipoLocal = readString(row.teams?.home?.name) ?? "—";
   const equipoVisitante = readString(row.teams?.away?.name) ?? "—";
   const golesLocal = readNumberOrNull(row.goals?.home);
