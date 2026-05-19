@@ -63,19 +63,15 @@ def database_connected(settings: Settings, *, try_migrate: bool = False) -> bool
 
 
 def database_status_message(settings: Settings) -> str | None:
-    """Mensaje para UI cuando el historial no está operativo; None si todo OK."""
+    """Mensaje amigable para UI; None si el historial está operativo."""
     if not settings.database_url:
-        return (
-            "El historial requiere DATABASE_URL en el servidor (Render → Environment). "
-            "Usa la cadena de conexión de Neon (postgresql://…?sslmode=require)."
-        )
+        logger.info("database_status_message: DATABASE_URL no configurada")
+        return "No hay historial disponible."
 
     eng = get_engine(settings.database_url)
     if eng is None:
-        return (
-            "No se pudo conectar a PostgreSQL. Revisa DATABASE_URL en Render y que "
-            "psycopg2-binary esté instalado en el despliegue."
-        )
+        logger.warning("database_status_message: engine no disponible")
+        return "No hay historial disponible."
 
     try:
         with eng.connect() as conn:
@@ -83,30 +79,21 @@ def database_status_message(settings: Settings) -> str | None:
             if _acca_history_ready(conn):
                 return None
     except Exception as exc:
-        logger.warning("database_status_message: ping falló — %s", exc)
-        return (
-            "PostgreSQL no responde. Verifica la URL de Neon (sslmode=require) y que "
-            "el servicio en Render tenga acceso a internet saliente."
-        )
+        logger.warning("database_status_message: ping falló — %s", exc, exc_info=True)
+        return "No hay historial disponible."
 
     if ensure_database_schema(settings.database_url):
         try:
             with eng.connect() as conn:
                 if _acca_history_ready(conn):
                     return None
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("database_status_message: re-check falló — %s", exc)
 
     err = schema_bootstrap_error()
     if err:
-        return (
-            "La base de datos responde pero no se pudo preparar la tabla acca_history. "
-            f"Detalle: {err}"
-        )
-    return (
-        "La base de datos responde pero falta el esquema de historial (acca_history). "
-        "Revisa los logs del backend en Render."
-    )
+        logger.error("database_status_message: esquema acca_history no listo — %s", err)
+    return "No hay historial disponible."
 
 
 def build_db_health_payload(settings: Settings) -> dict[str, Any]:

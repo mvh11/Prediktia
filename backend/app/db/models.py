@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date as date_py
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import BigInteger, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -23,7 +24,7 @@ class FixtureRow(Base):
     away_team: Mapped[str] = mapped_column(String(255), default="")
     kickoff: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    scores: Mapped[dict | list | None] = mapped_column(JSONB, nullable=True)
+    scores: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -93,7 +94,7 @@ class AccaHistoryRow(Base):
     risk_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     volatility_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     model_version: Mapped[str] = mapped_column(String(64), default="")
-    picks_json: Mapped[list | dict] = mapped_column(JSONB, nullable=False)
+    picks_json: Mapped[Any] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
@@ -117,7 +118,7 @@ class ModelMetricRow(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     scope: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    value_json: Mapped[dict | list | None] = mapped_column(JSONB, nullable=True)
+    value_json: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
     period_start: Mapped[date_py | None] = mapped_column(Date, nullable=True)
     period_end: Mapped[date_py | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

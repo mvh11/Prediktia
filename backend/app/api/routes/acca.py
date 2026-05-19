@@ -175,25 +175,26 @@ def get_smart_acca(
         return SmartAccaResponse.model_validate(empty)
 
 
+_HISTORY_UNAVAILABLE_MSG = "No hay historial disponible."
+
+
 @router.get("/history", response_model=AccaHistoryListResponse)
 def get_acca_history(
     limit: int = Query(default=30, ge=1, le=200),
     settings: Settings = Depends(get_settings),
 ) -> AccaHistoryListResponse:
     """Historial de combinadas guardadas (PostgreSQL / Neon)."""
-    configured = database_connected(settings, try_migrate=True)
-    db_message: str | None = None
-    if not configured:
-        db_message = database_status_message(settings)
-
+    items = []
     try:
         items = list_acca_history(settings, limit=limit)
     except Exception:
         logger.exception("GET /acca/history: error inesperado")
         items = []
 
-    if configured and not db_message:
-        configured = database_connected(settings)
+    configured = bool(items) or database_connected(settings, try_migrate=True)
+    db_message: str | None = None
+    if not configured:
+        db_message = database_status_message(settings) or _HISTORY_UNAVAILABLE_MSG
 
     return AccaHistoryListResponse(
         items=items,

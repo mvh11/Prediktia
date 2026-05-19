@@ -91,8 +91,7 @@ export function AccaBuilder() {
       setHistory({
         items: [],
         database_configured: false,
-        database_message:
-          "No se pudo cargar el historial. Comprueba que el backend en Render esté activo.",
+        database_message: "No hay historial disponible.",
       });
     } finally {
       setHistoryLoading(false);
@@ -309,10 +308,7 @@ export function AccaBuilder() {
             {historyLoading && <p className="text-sm text-zinc-500">Cargando historial…</p>}
 
             {!historyLoading && history && !history.database_configured && (
-              <p className="text-sm text-zinc-500">
-                {history.database_message ??
-                  "Historial no disponible: configura DATABASE_URL en Render con la cadena de Neon (postgresql://…?sslmode=require)."}
-              </p>
+              <p className="text-sm text-zinc-500">No hay historial disponible.</p>
             )}
 
             {!historyLoading && history?.database_configured && history.items.length === 0 && (
