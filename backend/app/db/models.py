@@ -1,12 +1,11 @@
-"""Modelos analíticos: fixtures, cuotas, predicciones, historial ACCA, métricas.
+"""Modelos ORM — anotaciones simples para SQLAlchemy 2.x y Python 3.14 (Render/Neon).
 
-Anotaciones compatibles con SQLAlchemy 2.x y Python 3.11–3.14:
-sin ``Mapped[list | dict]`` ni otras unions PEP 604 dentro de ``Mapped[]``.
+Reglas: dentro de ``Mapped[]`` solo tipos escalares simples (int, str, float, datetime)
+o ``Any`` para JSONB y columnas nullable. Sin list, dict, tuple, Union ni ``X | Y``.
 """
 
-from datetime import date as date_py
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import BigInteger, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -20,13 +19,13 @@ class FixtureRow(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     fixture_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
-    league_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    league_id: Mapped[Any] = mapped_column(Integer, nullable=True, index=True)
     league: Mapped[str] = mapped_column(String(512), default="")
     home_team: Mapped[str] = mapped_column(String(255), default="")
     away_team: Mapped[str] = mapped_column(String(255), default="")
-    kickoff: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    status: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
-    scores: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
+    kickoff: Mapped[Any] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[Any] = mapped_column(String(32), nullable=True)
+    scores: Mapped[Any] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -39,9 +38,9 @@ class TeamRow(Base):
     __tablename__ = "teams"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    external_id: Mapped[Optional[int]] = mapped_column(Integer, unique=True, nullable=True, index=True)
+    external_id: Mapped[Any] = mapped_column(Integer, unique=True, nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    country: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    country: Mapped[Any] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -65,7 +64,7 @@ class PredictionRow(Base):
     __tablename__ = "predictions"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    acca_id: Mapped[Optional[str]] = mapped_column(
+    acca_id: Mapped[Any] = mapped_column(
         String(36),
         ForeignKey("acca_history.acca_id", ondelete="SET NULL"),
         nullable=True,
@@ -88,13 +87,13 @@ class AccaHistoryRow(Base):
 
     acca_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     risk_profile: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    fixture_date: Mapped[Optional[date_py]] = mapped_column(Date, nullable=True, index=True)
+    fixture_date: Mapped[Any] = mapped_column(Date, nullable=True, index=True)
     total_odds: Mapped[float] = mapped_column(Float, nullable=False)
     combined_ev: Mapped[float] = mapped_column(Float, nullable=False)
     combined_ev_pct: Mapped[float] = mapped_column(Float, nullable=False)
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False)
-    risk_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    volatility_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    risk_score: Mapped[Any] = mapped_column(Float, nullable=True)
+    volatility_score: Mapped[Any] = mapped_column(Float, nullable=True)
     model_version: Mapped[str] = mapped_column(String(64), default="")
     picks_json: Mapped[Any] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(
@@ -104,11 +103,9 @@ class AccaHistoryRow(Base):
         server_default="pending",
         index=True,
     )
-    result: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
-    roi: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    settled_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True, index=True
-    )
+    result: Mapped[Any] = mapped_column(String(32), nullable=True)
+    roi: Mapped[Any] = mapped_column(Float, nullable=True)
+    settled_at: Mapped[Any] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
@@ -119,11 +116,11 @@ class ModelMetricRow(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    scope: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    value_json: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)
-    period_start: Mapped[Optional[date_py]] = mapped_column(Date, nullable=True)
-    period_end: Mapped[Optional[date_py]] = mapped_column(Date, nullable=True)
-    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    scope: Mapped[Any] = mapped_column(String(128), nullable=True)
+    value_json: Mapped[Any] = mapped_column(JSONB, nullable=True)
+    period_start: Mapped[Any] = mapped_column(Date, nullable=True)
+    period_end: Mapped[Any] = mapped_column(Date, nullable=True)
+    notes: Mapped[Any] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
