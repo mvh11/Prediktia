@@ -1,4 +1,4 @@
-import { MATCHES_BASE_URL } from "@/lib/matches";
+import { API_URL } from "@/lib/api";
 
 import type { AccaRiskLevel, SmartAccaResponse } from "./types";
 
@@ -14,7 +14,7 @@ export async function fetchSmartAcca(
     params.set("fetch_odds", "false");
   }
 
-  const res = await fetch(`${MATCHES_BASE_URL}/acca?${params.toString()}`, {
+  const res = await fetch(`${API_URL}/acca?${params.toString()}`, {
     cache: "no-store",
   });
   if (!res.ok) {

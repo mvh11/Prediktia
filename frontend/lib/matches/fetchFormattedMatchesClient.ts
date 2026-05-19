@@ -1,12 +1,7 @@
+import { API_URL } from "@/lib/api";
+
 import { formatMatches } from "./formatMatches";
 import type { FormattedMatch } from "./types";
-
-const DEFAULT_BACKEND = "http://127.0.0.1:8000";
-
-export const MATCHES_BASE_URL =
-  (typeof process !== "undefined" &&
-    process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "")) ||
-  DEFAULT_BACKEND;
 
 type MatchesApiPayload = {
   raw_fixtures?: unknown;
@@ -28,7 +23,7 @@ export function fetchFormattedMatchesOnce(): Promise<FormattedMatch[]> {
   }
 
   inflight = (async () => {
-    const res = await fetch(`${MATCHES_BASE_URL}/matches`, { cache: "no-store" });
+    const res = await fetch(`${API_URL}/matches`, { cache: "no-store" });
     if (!res.ok) {
       console.warn(`[matches] HTTP ${res.status} — lista vacía para no romper la demo`);
       cache = [];

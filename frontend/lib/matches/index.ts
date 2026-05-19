@@ -6,10 +6,8 @@ export {
   partitionMatchesByBucket,
 } from "./categorizeFormattedMatch";
 export type { MatchBucket } from "./categorizeFormattedMatch";
-export {
-  fetchFormattedMatchesOnce,
-  MATCHES_BASE_URL,
-} from "./fetchFormattedMatchesClient";
+export { API_URL, MATCHES_BASE_URL } from "@/lib/api";
+export { fetchFormattedMatchesOnce } from "./fetchFormattedMatchesClient";
 export type {
   ApiFootballFixtureItem,
   FormattedMatch,

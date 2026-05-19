@@ -1,4 +1,4 @@
-import { MATCHES_BASE_URL } from "@/lib/matches";
+import { API_URL } from "@/lib/api";
 
 import type { ValueBetsResponse } from "./types";
 
@@ -18,7 +18,7 @@ export function fetchValueBetsOnce(): Promise<ValueBetsResponse> {
   }
 
   inflight = (async () => {
-    const res = await fetch(`${MATCHES_BASE_URL}/value-bets`, { cache: "no-store" });
+    const res = await fetch(`${API_URL}/value-bets`, { cache: "no-store" });
     if (!res.ok) {
       console.warn(`[value-bets] HTTP ${res.status} — respuesta vacía para no romper la demo`);
       const empty: ValueBetsResponse = {

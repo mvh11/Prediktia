@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 
+import { API_URL } from "@/lib/api";
 import {
   fetchFormattedMatchesOnce,
   FormatMatchesError,
-  MATCHES_BASE_URL,
   type FormattedMatch,
 } from "@/lib/matches";
 
@@ -57,13 +57,13 @@ export function FormatMatchesConsole() {
         <p className="mt-2 text-sm text-gray-400">
           Partidos formateados desde{" "}
           <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-cyan-300">
-            {MATCHES_BASE_URL}/matches
+            {API_URL}/matches
           </code>{" "}
           (misma caché que{" "}
           <code className="rounded bg-gray-800 px-1 py-0.5 text-xs">/matches</code>
           ). Opcional: define{" "}
           <code className="rounded bg-gray-800 px-1 py-0.5 text-xs">
-            NEXT_PUBLIC_BACKEND_URL
+            NEXT_PUBLIC_API_URL
           </code>{" "}
           en <code className="rounded bg-gray-800 px-1 py-0.5 text-xs">.env.local</code>.
         </p>

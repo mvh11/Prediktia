@@ -1,4 +1,4 @@
-import { MATCHES_BASE_URL } from "@/lib/matches";
+import { API_URL } from "@/lib/api";
 
 import type { AccaHistoryItem, AccaHistoryListResponse } from "./types";
 
@@ -27,7 +27,7 @@ function normalizeItem(raw: Record<string, unknown>): AccaHistoryItem {
 
 export async function fetchAccaHistory(limit = 30): Promise<AccaHistoryListResponse> {
   const params = new URLSearchParams({ limit: String(limit) });
-  const res = await fetch(`${MATCHES_BASE_URL}/acca/history?${params.toString()}`, {
+  const res = await fetch(`${API_URL}/acca/history?${params.toString()}`, {
     cache: "no-store",
   });
   if (!res.ok) {

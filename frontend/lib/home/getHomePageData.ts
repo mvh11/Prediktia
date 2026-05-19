@@ -1,4 +1,4 @@
-import { MATCHES_BASE_URL } from "@/lib/matches";
+import { API_URL } from "@/lib/api";
 import {
   buildFixtureValueGroups,
   fetchValueBetsOnce,
@@ -81,7 +81,7 @@ export async function getHomePageData(): Promise<HomePageData> {
 
     let accaCount: number | null = null;
     try {
-      const res = await fetch(`${MATCHES_BASE_URL}/acca/history?limit=200`, {
+      const res = await fetch(`${API_URL}/acca/history?limit=200`, {
         cache: "no-store",
       });
       if (res.ok) {
