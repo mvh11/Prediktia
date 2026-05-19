@@ -96,6 +96,37 @@ def database_status_message(settings: Settings) -> str | None:
     return "No hay historial disponible."
 
 
+def inspect_db_health(settings: Settings) -> dict[str, Any]:
+    """
+    Respuesta simple para GET /health/db (Render / Neon).
+    Éxito: {"database": "ok", "acca_history_exists": true}
+    """
+    if not settings.database_url:
+        return {"database": "disabled", "acca_history_exists": False}
+
+    try:
+        eng = get_engine(settings.database_url)
+        if eng is None:
+            return {"database": "error", "acca_history_exists": False}
+
+        with eng.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            if _acca_history_ready(conn):
+                return {"database": "ok", "acca_history_exists": True}
+
+        if ensure_database_schema(settings.database_url):
+            with eng.connect() as conn:
+                if _acca_history_ready(conn):
+                    return {"database": "ok", "acca_history_exists": True}
+
+        err = schema_bootstrap_error()
+        logger.error("inspect_db_health: acca_history no lista — %s", err)
+        return {"database": "error", "acca_history_exists": False}
+    except Exception as exc:
+        logger.warning("inspect_db_health: %s", exc, exc_info=True)
+        return {"database": "error", "acca_history_exists": False}
+
+
 def build_db_health_payload(settings: Settings) -> dict[str, Any]:
     """
     Carga útil para GET /health/db.

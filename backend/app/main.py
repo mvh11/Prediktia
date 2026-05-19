@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from app.api.routes import acca, debug_latam, matches, value_bets
 from app.config import Settings, get_settings
 from app.db.migrations import ensure_database_schema
-from app.services.db_health import build_db_health_payload, database_connected
+from app.services.db_health import database_connected, inspect_db_health
 
 logger = logging.getLogger("prediktia")
 
@@ -106,14 +106,14 @@ def health() -> dict[str, str]:
 @app.get("/health/db")
 def health_db(settings: Settings = Depends(get_settings)) -> dict:
     """
-    Estado de PostgreSQL. Éxito típico: {"database": "connected"}.
-    Si falla la conexión o faltan migraciones, devuelve database=error y detalle (HTTP 200).
+    Estado de PostgreSQL / acca_history.
+    Éxito: {"database": "ok", "acca_history_exists": true}
     """
-    payload = build_db_health_payload(settings)
-    if payload.get("database") == "connected":
-        logger.info("DB connected (health/db)")
+    payload = inspect_db_health(settings)
+    if payload.get("database") == "ok":
+        logger.info("DB ok (health/db) acca_history_exists=%s", payload.get("acca_history_exists"))
     elif payload.get("database") == "disabled":
-        logger.info("DB disabled (health/db) — stateless")
+        logger.info("DB disabled (health/db)")
     else:
-        logger.warning("DB health check: %s", payload.get("detail", payload))
+        logger.warning("DB health check: %s", payload)
     return payload
