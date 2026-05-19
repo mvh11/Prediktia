@@ -10,6 +10,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.db.url import normalize_database_url
+
 logger = logging.getLogger(__name__)
 
 _engine: Engine | None = None
@@ -22,6 +24,7 @@ def get_engine(database_url: str | None) -> Engine | None:
     global _engine, _SessionLocal, _bound_url
     if not database_url:
         return None
+    database_url = normalize_database_url(database_url)
     if _engine is not None and _bound_url == database_url:
         return _engine
     if _engine is not None:

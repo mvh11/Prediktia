@@ -17,6 +17,7 @@ if str(_ROOT) not in sys.path:
 
 from app.db.base import Base  # noqa: E402
 from app.db import models as _models  # noqa: F401, E402
+from app.db.url import normalize_database_url  # noqa: E402
 
 config = context.config
 if config.config_file_name is not None:
@@ -28,14 +29,14 @@ target_metadata = Base.metadata
 def get_database_url() -> str:
     url = os.environ.get("DATABASE_URL")
     if url:
-        return url
+        return normalize_database_url(url)
     from app.config import get_settings
 
     s = get_settings()
     if s.database_url:
         return s.database_url
     raise RuntimeError(
-        "Definí DATABASE_URL en el entorno o en .env para ejecutar migraciones Alembic."
+        "Definí DATABASE_URL (Neon/Render) o en backend/.env para ejecutar migraciones Alembic."
     )
 
 

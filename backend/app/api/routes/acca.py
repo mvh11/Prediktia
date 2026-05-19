@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from app.config import Settings, get_settings
 from app.schemas.acca import AccaHistoryListResponse, SmartAccaResponse
 from app.services.acca_persistence import list_acca_history, persist_smart_acca
-from app.services.db_health import database_connected
+from app.services.db_health import database_connected, database_status_message
 from app.services.smart_acca import (
     RiskLevel,
     SIMPLE_PROFILES,
@@ -180,13 +180,23 @@ def get_acca_history(
     limit: int = Query(default=30, ge=1, le=200),
     settings: Settings = Depends(get_settings),
 ) -> AccaHistoryListResponse:
-    """Historial de combinadas guardadas (PostgreSQL)."""
+    """Historial de combinadas guardadas (PostgreSQL / Neon)."""
+    configured = database_connected(settings, try_migrate=True)
+    db_message: str | None = None
+    if not configured:
+        db_message = database_status_message(settings)
+
     try:
         items = list_acca_history(settings, limit=limit)
     except Exception:
         logger.exception("GET /acca/history: error inesperado")
         items = []
+
+    if configured and not db_message:
+        configured = database_connected(settings)
+
     return AccaHistoryListResponse(
         items=items,
-        database_configured=database_connected(settings),
+        database_configured=configured,
+        database_message=db_message,
     )

@@ -36,6 +36,7 @@ export async function fetchAccaHistory(limit = 30): Promise<AccaHistoryListRespo
   const data = (await res.json()) as {
     items?: unknown[];
     database_configured?: boolean;
+    database_message?: string | null;
   };
   const items = Array.isArray(data.items)
     ? data.items
@@ -46,5 +47,6 @@ export async function fetchAccaHistory(limit = 30): Promise<AccaHistoryListRespo
   return {
     items,
     database_configured: Boolean(data.database_configured),
+    database_message: data.database_message ?? null,
   };
 }

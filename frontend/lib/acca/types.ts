@@ -71,4 +71,5 @@ export type AccaHistoryItem = {
 export type AccaHistoryListResponse = {
   items: AccaHistoryItem[];
   database_configured: boolean;
+  database_message?: string | null;
 };

@@ -88,7 +88,12 @@ export function AccaBuilder() {
       const h = await fetchAccaHistory(30);
       setHistory(h);
     } catch {
-      setHistory({ items: [], database_configured: false });
+      setHistory({
+        items: [],
+        database_configured: false,
+        database_message:
+          "No se pudo cargar el historial. Comprueba que el backend en Render esté activo.",
+      });
     } finally {
       setHistoryLoading(false);
     }
@@ -305,8 +310,8 @@ export function AccaBuilder() {
 
             {!historyLoading && history && !history.database_configured && (
               <p className="text-sm text-zinc-500">
-                Historial no disponible: revisa DATABASE_URL en backend/.env, que PostgreSQL esté
-                activo (docker compose up) y ejecuta migraciones (alembic upgrade head).
+                {history.database_message ??
+                  "Historial no disponible: configura DATABASE_URL en Render con la cadena de Neon (postgresql://…?sslmode=require)."}
               </p>
             )}
 

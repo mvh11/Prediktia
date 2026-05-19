@@ -7,7 +7,8 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes import acca, debug_latam, matches, value_bets
 from app.config import Settings, get_settings
-from app.services.db_health import build_db_health_payload
+from app.db.migrations import ensure_database_schema
+from app.services.db_health import build_db_health_payload, database_connected
 
 logger = logging.getLogger("prediktia")
 
@@ -30,75 +31,37 @@ async def lifespan(app: FastAPI):
     app.state.db_mode = "stateless"
 
     if not settings.database_url:
-        logger.info("DB disabled — no DATABASE_URL; stateless mode enabled")
+        logger.info("DB disabled — no DATABASE_URL; historial ACCA sin persistencia")
     else:
         try:
             import sqlalchemy
-            from sqlalchemy import text
-
-            from app.db.session import get_engine
 
             _ = sqlalchemy.__version__
-            eng = get_engine(settings.database_url)
-            if eng is None:
-                logger.warning(
-                    "DB unavailable → running stateless mode (engine no creado; revisa DATABASE_URL y drivers)."
-                )
+            if ensure_database_schema(settings.database_url):
+                if database_connected(settings):
+                    logger.info("DB connected — Neon/PostgreSQL listo (acca_history OK)")
+                    app.state.db_mode = "connected"
+                else:
+                    logger.warning(
+                        "DB: migraciones ejecutadas pero acca_history no verificada; "
+                        "historial en modo best-effort"
+                    )
             else:
-                with eng.connect() as conn:
-                    conn.execute(text("SELECT 1"))
-                    reg = conn.execute(
-                        text("SELECT to_regclass('public.acca_history')::text")
-                    ).scalar()
-                    has_status = conn.execute(
-                        text(
-                            """
-                            SELECT 1 FROM information_schema.columns
-                            WHERE table_schema = 'public' AND table_name = 'acca_history'
-                              AND column_name = 'status'
-                            LIMIT 1
-                            """
-                        )
-                    ).scalar()
-                    has_settled_at = conn.execute(
-                        text(
-                            """
-                            SELECT 1 FROM information_schema.columns
-                            WHERE table_schema = 'public' AND table_name = 'acca_history'
-                              AND column_name = 'settled_at'
-                            LIMIT 1
-                            """
-                        )
-                    ).scalar()
-                    try:
-                        conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).scalar()
-                    except Exception:
-                        pass
+                from app.db.migrations import schema_bootstrap_error
 
-                logger.info("DB connected — ping OK")
-                app.state.db_mode = "connected"
-                if not reg:
-                    logger.warning(
-                        "Alembic pending — tabla public.acca_history no encontrada. "
-                        "Ejecuta desde backend/: alembic upgrade head"
-                    )
-                elif not has_status:
-                    logger.warning(
-                        "Alembic pending — falta columna acca_history.status. Ejecuta: alembic upgrade head"
-                    )
-                elif not has_settled_at:
-                    logger.warning(
-                        "Alembic pending — falta columna acca_history.settled_at. Ejecuta: alembic upgrade head"
-                    )
+                logger.warning(
+                    "DB: no se pudo aplicar el esquema automáticamente (%s). "
+                    "Revisa DATABASE_URL en Render (Neon).",
+                    schema_bootstrap_error() or "error desconocido",
+                )
         except ImportError as exc:
             logger.warning(
-                "DB unavailable → running stateless mode (SQLAlchemy no instalado: %s). "
-                "Instala: pip install -r requirements.txt",
+                "DB unavailable — SQLAlchemy no instalado (%s). pip install -r requirements.txt",
                 exc,
             )
         except Exception:
             logger.warning(
-                "DB unavailable → running stateless mode (no se pudo verificar PostgreSQL). "
+                "DB unavailable — no se pudo conectar a PostgreSQL (Neon). "
                 "La API sigue; persistencia ACCA será best-effort.",
                 exc_info=True,
             )

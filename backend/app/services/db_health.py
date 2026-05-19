@@ -1,4 +1,4 @@
-"""Comprobación de conectividad PostgreSQL (sin acoplar al arranque de FastAPI)."""
+"""Comprobación de conectividad PostgreSQL (Neon, Render, local)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,11 @@ import logging
 import re
 from typing import Any
 
+from sqlalchemy import text
+
 from app.config import Settings
+from app.db.migrations import ensure_database_schema, schema_bootstrap_error
+from app.db.session import get_engine
 
 logger = logging.getLogger(__name__)
 
@@ -17,25 +21,92 @@ def _redact_database_url(url: str) -> str:
     return _SAFE_URL_RE.sub(r"//\1:***@", url, count=1)
 
 
-def database_connected(settings: Settings) -> bool:
-    """True si DATABASE_URL está definida, PostgreSQL responde y existe acca_history."""
+def _acca_history_ready(conn) -> bool:
+    tbl = conn.execute(text("SELECT to_regclass('public.acca_history')::text")).scalar()
+    if not tbl:
+        return False
+    has_status = conn.execute(
+        text(
+            """
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'acca_history'
+              AND column_name = 'status'
+            LIMIT 1
+            """
+        )
+    ).scalar()
+    return bool(has_status)
+
+
+def database_connected(settings: Settings, *, try_migrate: bool = False) -> bool:
+    """
+    True si DATABASE_URL está definida, PostgreSQL responde y existe acca_history.
+    Con try_migrate=True intenta aplicar migraciones Alembic si falta la tabla.
+    """
     if not settings.database_url:
         return False
     try:
-        from sqlalchemy import text
-
-        from app.db.session import get_engine
-
         eng = get_engine(settings.database_url)
         if eng is None:
             return False
         with eng.connect() as conn:
             conn.execute(text("SELECT 1"))
-            tbl = conn.execute(text("SELECT to_regclass('public.acca_history')::text")).scalar()
-            return bool(tbl)
+            if _acca_history_ready(conn):
+                return True
+        if try_migrate and ensure_database_schema(settings.database_url):
+            with eng.connect() as conn:
+                return _acca_history_ready(conn)
+        return False
     except Exception as exc:
         logger.debug("database_connected: %s", exc)
         return False
+
+
+def database_status_message(settings: Settings) -> str | None:
+    """Mensaje para UI cuando el historial no está operativo; None si todo OK."""
+    if not settings.database_url:
+        return (
+            "El historial requiere DATABASE_URL en el servidor (Render → Environment). "
+            "Usa la cadena de conexión de Neon (postgresql://…?sslmode=require)."
+        )
+
+    eng = get_engine(settings.database_url)
+    if eng is None:
+        return (
+            "No se pudo conectar a PostgreSQL. Revisa DATABASE_URL en Render y que "
+            "psycopg2-binary esté instalado en el despliegue."
+        )
+
+    try:
+        with eng.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            if _acca_history_ready(conn):
+                return None
+    except Exception as exc:
+        logger.warning("database_status_message: ping falló — %s", exc)
+        return (
+            "PostgreSQL no responde. Verifica la URL de Neon (sslmode=require) y que "
+            "el servicio en Render tenga acceso a internet saliente."
+        )
+
+    if ensure_database_schema(settings.database_url):
+        try:
+            with eng.connect() as conn:
+                if _acca_history_ready(conn):
+                    return None
+        except Exception:
+            pass
+
+    err = schema_bootstrap_error()
+    if err:
+        return (
+            "La base de datos responde pero no se pudo preparar la tabla acca_history. "
+            f"Detalle: {err}"
+        )
+    return (
+        "La base de datos responde pero falta el esquema de historial (acca_history). "
+        "Revisa los logs del backend en Render."
+    )
 
 
 def build_db_health_payload(settings: Settings) -> dict[str, Any]:
@@ -46,15 +117,12 @@ def build_db_health_payload(settings: Settings) -> dict[str, Any]:
     if not settings.database_url:
         return {
             "database": "disabled",
-            "detail": "DATABASE_URL no configurada; modo stateless.",
+            "detail": "DATABASE_URL no configurada; modo sin persistencia de historial.",
             "stateless": True,
         }
 
     try:
         import sqlalchemy
-        from sqlalchemy import text
-
-        from app.db.session import get_engine
 
         _ = sqlalchemy.__version__
     except ImportError as exc:
@@ -70,68 +138,39 @@ def build_db_health_payload(settings: Settings) -> dict[str, Any]:
         if eng is None:
             return {
                 "database": "error",
-                "detail": "No se pudo crear el engine (revisa URL y drivers, p. ej. psycopg2-binary).",
+                "detail": "No se pudo crear el engine (revisa URL y psycopg2-binary).",
                 "database_url_preview": _redact_database_url(url),
             }
         with eng.connect() as conn:
             conn.execute(text("SELECT 1"))
             try:
-                alembic_rev = conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).scalar()
+                alembic_rev = conn.execute(
+                    text("SELECT version_num FROM alembic_version LIMIT 1")
+                ).scalar()
             except Exception:
                 alembic_rev = None
-            tbl = conn.execute(
-                text("SELECT to_regclass('public.acca_history')::text")
-            ).scalar()
-            if not tbl:
-                logger.warning(
-                    "Alembic pending — tabla public.acca_history no existe; ejecuta: alembic upgrade head"
-                )
-                return {
-                    "database": "error",
-                    "detail": "PostgreSQL responde pero faltan tablas (migraciones pendientes). Ejecuta: alembic upgrade head",
-                    "alembic_revision": alembic_rev,
-                    "migrations_pending": True,
-                }
-            has_status = conn.execute(
-                text(
-                    """
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = 'public' AND table_name = 'acca_history'
-                      AND column_name = 'status'
-                    LIMIT 1
-                    """
-                )
-            ).scalar()
-            if not has_status:
-                logger.warning(
-                    "Alembic pending — falta columna acca_history.status; ejecuta: alembic upgrade head"
-                )
-                return {
-                    "database": "error",
-                    "detail": "Migraciones desactualizadas (falta acca_history.status). Ejecuta: alembic upgrade head",
-                    "alembic_revision": alembic_rev,
-                    "migrations_pending": True,
-                }
-            has_settled_at = conn.execute(
-                text(
-                    """
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = 'public' AND table_name = 'acca_history'
-                      AND column_name = 'settled_at'
-                    LIMIT 1
-                    """
-                )
-            ).scalar()
-            if not has_settled_at:
-                logger.warning(
-                    "Alembic pending — falta columna acca_history.settled_at; ejecuta: alembic upgrade head"
-                )
-                return {
-                    "database": "error",
-                    "detail": "Migraciones desactualizadas (falta acca_history.settled_at). Ejecuta: alembic upgrade head",
-                    "alembic_revision": alembic_rev,
-                    "migrations_pending": True,
-                }
+
+            if not _acca_history_ready(conn):
+                ensure_database_schema(settings.database_url)
+                with eng.connect() as conn2:
+                    if _acca_history_ready(conn2):
+                        try:
+                            alembic_rev = conn2.execute(
+                                text("SELECT version_num FROM alembic_version LIMIT 1")
+                            ).scalar()
+                        except Exception:
+                            pass
+                    else:
+                        err = schema_bootstrap_error()
+                        return {
+                            "database": "error",
+                            "detail": (
+                                "PostgreSQL responde pero acca_history no está lista. "
+                                + (err or "Revisa logs de migración en Render.")
+                            ),
+                            "alembic_revision": alembic_rev,
+                            "migrations_pending": True,
+                        }
 
         out: dict[str, Any] = {"database": "connected"}
         if alembic_rev:

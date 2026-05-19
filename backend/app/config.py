@@ -1,8 +1,10 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.db.url import normalize_database_url
 
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 _ENV_CANDIDATES = (
@@ -29,11 +31,22 @@ class Settings(BaseSettings):
     # TTL (s) caché fixtures/odds; mínimo efectivo 300s. Compartido por matches, value y acca.
     matches_upstream_cache_ttl_seconds: int = 300
 
-    # PostgreSQL (opcional). Si falta, la API sigue sin persistencia.
+    # PostgreSQL (opcional). Neon/Render suelen usar postgresql://…?sslmode=require
     database_url: str | None = Field(
         default=None,
-        description="postgresql+psycopg2://user:pass@host:5432/dbname",
+        validation_alias=AliasChoices("DATABASE_URL", "database_url"),
+        description="PostgreSQL (Neon, Render, local). Se normaliza a postgresql+psycopg2://",
     )
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _coerce_database_url(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        return normalize_database_url(text)
 
     # ACCA: margen (min) antes del kickoff en UTC; 0 = desactivado (solo futuro estricto).
     acca_min_minutes_before_kickoff: int = 0

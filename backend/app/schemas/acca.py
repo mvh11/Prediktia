@@ -100,3 +100,4 @@ class AccaHistoryItemOut(BaseModel):
 class AccaHistoryListResponse(BaseModel):
     items: list[AccaHistoryItemOut]
     database_configured: bool = False
+    database_message: str | None = None
