@@ -78,8 +78,33 @@ def list_value_bets(
         stale,
     )
 
+    if len(fixtures) == 0:
+        logger.warning(
+            "DIAG GET /value-bets date=%s upstream_fixtures=0 warning=%s stale=%s "
+            "(misma causa que /matches: API-Football vacía o 429)",
+            day.isoformat(),
+            warning,
+            stale,
+        )
+    elif len(prematch_fixtures) == 0:
+        logger.warning(
+            "DIAG GET /value-bets date=%s prematch=0 upstream=%s "
+            "(filtro horario eliminó todos; acca_min_minutes_before_kickoff=%s)",
+            day.isoformat(),
+            len(fixtures),
+            settings.acca_min_minutes_before_kickoff,
+        )
+
     raw_picks = build_mock_positive_ev_picks(prematch_fixtures)
     picks = [ValueBetPick.model_validate(p) for p in raw_picks]
+
+    if len(picks) == 0:
+        logger.warning(
+            "DIAG GET /value-bets date=%s picks=0 prematch=%s "
+            "(motor mock EV no generó picks para estos fixtures)",
+            day.isoformat(),
+            len(prematch_fixtures),
+        )
 
     if os.environ.get("PIPELINE_DEBUG_LATAM", "").strip() in ("1", "true", "yes"):
         log_all_fixtures_pipeline(

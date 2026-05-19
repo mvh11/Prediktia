@@ -50,6 +50,16 @@ def list_matches(
     if meta.rate_limited:
         logger.warning("matches: rate limit — stale=%s warning=%s", meta.stale, meta.warning)
 
+    if len(fixtures) == 0:
+        logger.warning(
+            "DIAG GET /matches date=%s fixtures=0 rate_limited=%s stale=%s warning=%s "
+            "(revisar API_FOOTBALL_KEY, cuota 429 o fecha sin partidos)",
+            day.isoformat(),
+            meta.rate_limited,
+            meta.stale,
+            meta.warning,
+        )
+
     return MatchesResponse(
         date=day.isoformat(),
         results_count=len(fixtures),

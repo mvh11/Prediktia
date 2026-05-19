@@ -119,8 +119,14 @@ def get_smart_acca(
 
     try:
         result = generate_acca_for_date(settings, resolved_day, risk, fetch_odds=fetch_odds)
-    except Exception:
-        logger.exception("GET /acca: error inesperado risk=%s", risk)
+    except Exception as exc:
+        logger.exception(
+            "DIAG GET /acca generate falló risk=%s date=%s error=%s: %s",
+            risk,
+            resolved_day.isoformat(),
+            type(exc).__name__,
+            exc,
+        )
         if risk == "extreme":
             result = _safe_empty_acca(
                 resolved_day,
@@ -133,6 +139,20 @@ def get_smart_acca(
     result["meta"]["requested_date"] = requested_day.isoformat()
     result["meta"]["resolved_date"] = resolved_day.isoformat()
     result["meta"]["auto_shifted_date"] = auto_shifted
+
+    meta = result.get("meta") or {}
+    if int(result.get("pick_count") or 0) == 0:
+        logger.warning(
+            "DIAG GET /acca sin picks risk=%s date=%s upstream_fixtures=%s "
+            "after_schedule=%s pool=%s eligible=%s message=%s",
+            risk,
+            resolved_day.isoformat(),
+            meta.get("fixtures_upstream_total"),
+            meta.get("fixtures_after_schedule_filter"),
+            meta.get("candidates_pool_size"),
+            meta.get("eligible_after_filters"),
+            result.get("message"),
+        )
 
     profile = result.get("profile") or {}
     min_required = int(profile.get("min_picks") or 0)
@@ -191,7 +211,7 @@ def get_acca_history(
         logger.exception("GET /acca/history: error inesperado")
         items = []
 
-    configured = bool(items) or database_connected(settings, try_migrate=True)
+    configured = bool(items) or database_connected(settings, try_migrate=False)
     db_message: str | None = None
     if not configured:
         db_message = database_status_message(settings) or _HISTORY_UNAVAILABLE_MSG

@@ -1,4 +1,5 @@
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -33,38 +34,35 @@ async def lifespan(app: FastAPI):
     if not settings.database_url:
         logger.info("DB disabled — no DATABASE_URL; historial ACCA sin persistencia")
     else:
-        try:
-            import sqlalchemy
 
-            _ = sqlalchemy.__version__
-            if ensure_database_schema(settings.database_url):
-                if database_connected(settings):
-                    logger.info("DB connected — Neon/PostgreSQL listo (acca_history OK)")
-                    app.state.db_mode = "connected"
+        def _bootstrap_db() -> None:
+            try:
+                import sqlalchemy
+
+                _ = sqlalchemy.__version__
+                if ensure_database_schema(settings.database_url):
+                    if database_connected(settings):
+                        logger.info("DB connected — Neon/PostgreSQL listo (acca_history OK)")
+                        app.state.db_mode = "connected"
+                    else:
+                        logger.warning(
+                            "DB: migraciones OK pero acca_history no verificada (historial best-effort)"
+                        )
                 else:
-                    logger.warning(
-                        "DB: migraciones ejecutadas pero acca_history no verificada; "
-                        "historial en modo best-effort"
-                    )
-            else:
-                from app.db.migrations import schema_bootstrap_error
+                    from app.db.migrations import schema_bootstrap_error
 
-                logger.warning(
-                    "DB: no se pudo aplicar el esquema automáticamente (%s). "
-                    "Revisa DATABASE_URL en Render (Neon).",
-                    schema_bootstrap_error() or "error desconocido",
-                )
-        except ImportError as exc:
-            logger.warning(
-                "DB unavailable — SQLAlchemy no instalado (%s). pip install -r requirements.txt",
-                exc,
-            )
-        except Exception:
-            logger.warning(
-                "DB unavailable — no se pudo conectar a PostgreSQL (Neon). "
-                "La API sigue; persistencia ACCA será best-effort.",
-                exc_info=True,
-            )
+                    logger.warning(
+                        "DB bootstrap falló (%s). /matches y /acca siguen activos.",
+                        schema_bootstrap_error() or "error desconocido",
+                    )
+            except ImportError as exc:
+                logger.warning("DB unavailable — SQLAlchemy: %s", exc)
+            except Exception:
+                logger.warning("DB bootstrap excepción (API sigue sin bloquear)", exc_info=True)
+
+        # No bloquear el arranque: fixtures/value/acca no dependen de PostgreSQL.
+        threading.Thread(target=_bootstrap_db, name="db-bootstrap", daemon=True).start()
+        logger.info("DB bootstrap en segundo plano (no bloquea /matches ni /value-bets)")
 
     yield
 
