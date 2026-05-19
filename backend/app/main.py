@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.routes import acca, debug_latam, matches, value_bets
 from app.config import Settings, get_settings
@@ -109,12 +110,9 @@ async def lifespan(app: FastAPI):
     logger.info("Prediktia API shutdown")
 
 
-app = FastAPI(
-    title="Prediktia API",
-    description="Backend MVP: partidos vía API-Football y base para ACCA.",
-    version="0.1.0",
-    lifespan=lifespan,
-)
+# Inicialización mínima: rutas OpenAPI por defecto (/docs, /openapi.json).
+# No usar root_path ni desactivar openapi_url en producción (Swagger falla con 404).
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -128,6 +126,12 @@ app.include_router(matches.router)
 app.include_router(value_bets.router)
 app.include_router(debug_latam.router)
 app.include_router(acca.router)
+
+
+@app.get("/openapi.json", include_in_schema=False)
+def openapi_schema() -> JSONResponse:
+    """Esquema OpenAPI en la ruta estándar (compatible con Render y Swagger UI)."""
+    return JSONResponse(app.openapi())
 
 
 @app.get("/health")
