@@ -136,20 +136,54 @@ def _get_stale_fixtures(key: str) -> dict[str, Any] | None:
     return None
 
 
+def _api_key_present(settings: Settings) -> bool:
+    return bool((settings.api_football_key or "").strip())
+
+
 def _api_get(
     settings: Settings,
     path: str,
     params: dict[str, Any],
 ) -> dict[str, Any]:
-    url = f"{settings.api_football_base_url.rstrip('/')}/{path.lstrip('/')}"
-    headers = {"x-apisports-key": settings.api_football_key}
+    base = (settings.api_football_base_url or "https://v3.football.api-sports.io").rstrip("/")
+    url = f"{base}/{path.lstrip('/')}"
+    api_key = (settings.api_football_key or "").strip()
+    key_present = bool(api_key)
+
+    # API-Sports directo (NO RapidAPI): solo x-apisports-key
+    headers = {
+        "x-apisports-key": api_key,
+        "Accept": "application/json",
+    }
     timeout = (
         settings.api_football_timeout_connect_seconds,
         settings.api_football_timeout_read_seconds,
     )
+
+    logger.info(
+        "API-Football request key_present=%s base_url=%s endpoint=%s params=%s",
+        key_present,
+        base,
+        url,
+        params,
+    )
+
+    if not key_present:
+        raise FootballApiError(
+            "API_FOOTBALL_KEY vacía: define la variable en Render (Environment).",
+            status_code=None,
+            response_text=None,
+        )
+
     try:
         response = requests.get(url, headers=headers, params=params, timeout=timeout)
     except requests.RequestException as exc:
+        logger.error(
+            "API-Football connection error endpoint=%s key_present=%s error=%s",
+            url,
+            key_present,
+            exc,
+        )
         raise FootballApiError(
             f"No se pudo conectar con API-Football: {exc}",
             status_code=None,
@@ -159,6 +193,13 @@ def _api_get(
     body_preview = response.text[:4000] if response.text else ""
 
     if response.status_code != 200:
+        logger.error(
+            "API-Football HTTP error status_code=%s endpoint=%s key_present=%s body=%s",
+            response.status_code,
+            url,
+            key_present,
+            body_preview[:800],
+        )
         raise FootballApiError(
             f"API-Football respondió {response.status_code}: {response.text[:500]}",
             status_code=response.status_code,
@@ -168,6 +209,12 @@ def _api_get(
     try:
         payload = response.json()
     except ValueError as exc:
+        logger.error(
+            "API-Football invalid JSON status_code=%s endpoint=%s body=%s",
+            response.status_code,
+            url,
+            body_preview[:800],
+        )
         raise FootballApiError(
             "La respuesta no es JSON válido.",
             status_code=response.status_code,
@@ -176,12 +223,24 @@ def _api_get(
 
     errors = payload.get("errors")
     if errors:
+        logger.error(
+            "API-Football API errors endpoint=%s errors=%s body=%s",
+            url,
+            errors,
+            body_preview[:800],
+        )
         raise FootballApiError(
             f"API-Football devolvió errores: {errors}",
             status_code=response.status_code,
             response_text=body_preview or None,
         )
 
+    logger.info(
+        "API-Football OK status_code=%s endpoint=%s results=%s",
+        response.status_code,
+        url,
+        payload.get("results"),
+    )
     return payload
 
 
@@ -224,6 +283,16 @@ def _fetch_fixtures_upstream_once(settings: Settings, day: date) -> dict[str, An
             logger.info("fixtures upstream OK date=%s count=%s", key, len(payload.get("response") or []))
             result_payload = _attach_meta(payload, CacheMeta(cache_hit=False))
         except FootballApiError as exc:
+            logger.error(
+                "DIAG fixtures upstream FAILED date=%s key_present=%s base_url=%s "
+                "status_code=%s error=%s response_body=%s",
+                key,
+                _api_key_present(settings),
+                settings.api_football_base_url,
+                exc.status_code,
+                exc,
+                (exc.response_text or "")[:800],
+            )
             stale = _get_stale_fixtures(key)
             if stale is not None:
                 warn = (
@@ -238,9 +307,12 @@ def _fetch_fixtures_upstream_once(settings: Settings, day: date) -> dict[str, An
             else:
                 warn = (
                     "API-Football no disponible y sin caché previa. "
-                    "Mostrando lista vacía para no interrumpir la demo."
+                    f"Detalle: {exc}"
                 )
-                logger.warning("fixtures upstream error date=%s — empty fallback: %s", key, exc)
+                logger.warning(
+                    "fixtures upstream error date=%s — empty fallback (ver log ERROR anterior)",
+                    key,
+                )
                 result_payload = _attach_meta(
                     _empty_fixtures_payload(),
                     CacheMeta(rate_limited=_is_rate_limited(exc), warning=warn),

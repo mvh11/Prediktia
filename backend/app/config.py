@@ -21,10 +21,48 @@ class Settings(BaseSettings):
         env_file=_ENV_FILES,
         env_file_encoding="utf-8",
         extra="ignore",
+        env_ignore_empty=True,
     )
 
-    api_football_key: str
-    api_football_base_url: str = "https://v3.football.api-sports.io"
+    api_football_key: str = Field(
+        validation_alias=AliasChoices(
+            "API_FOOTBALL_KEY",
+            "APIFOOTBALL_KEY",
+            "api_football_key",
+        ),
+    )
+    api_football_base_url: str = Field(
+        default="https://v3.football.api-sports.io",
+        validation_alias=AliasChoices(
+            "API_FOOTBALL_BASE_URL",
+            "api_football_base_url",
+        ),
+    )
+
+    @field_validator("api_football_key", mode="before")
+    @classmethod
+    def _normalize_api_key(cls, value: object) -> str:
+        if value is None:
+            return ""
+        return str(value).strip().strip('"').strip("'")
+
+    @field_validator("api_football_base_url", mode="before")
+    @classmethod
+    def _normalize_api_base_url(cls, value: object) -> str:
+        default = "https://v3.football.api-sports.io"
+        if value is None:
+            return default
+        text = str(value).strip().strip('"').strip("'").rstrip("/")
+        if not text:
+            return default
+        lower = text.lower()
+        if "rapidapi.com" in lower:
+            return default
+        if "api-sports.io" not in lower and "api-football" not in lower:
+            return default
+        if not text.startswith("http"):
+            text = f"https://{text}"
+        return text.rstrip("/")
     # Timeout (connect, read) en segundos; sin reintentos (una sola petición HTTP).
     api_football_timeout_connect_seconds: float = 10.0
     api_football_timeout_read_seconds: float = 25.0
