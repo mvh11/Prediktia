@@ -89,6 +89,15 @@ class Settings(BaseSettings):
     # ACCA: margen (min) antes del kickoff en UTC; 0 = desactivado (solo futuro estricto).
     acca_min_minutes_before_kickoff: int = 0
 
+    jwt_secret: str = Field(
+        default="prediktia-dev-secret-change-in-production",
+        validation_alias=AliasChoices("JWT_SECRET", "jwt_secret"),
+    )
+    jwt_expire_minutes: int = Field(
+        default=60 * 24 * 7,
+        validation_alias=AliasChoices("JWT_EXPIRE_MINUTES", "jwt_expire_minutes"),
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { useAuth } from "@/components/auth/AuthProvider";
 import {
   fetchAccaHistory,
   fetchSmartAcca,
@@ -73,19 +75,32 @@ function formatKickoffLabel(m: number | null | undefined): string {
 }
 
 export function AccaBuilder() {
+  const { user, accessToken, isLoading: authLoading } = useAuth();
   const [risk, setRisk] = useState<AccaRiskLevel>("medium");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SmartAccaResponse | null>(null);
   const [history, setHistory] = useState<AccaHistoryListResponse | null>(null);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
 
   const theme = riskTheme(result?.risk ?? risk);
 
   const loadHistory = useCallback(async () => {
+    if (!user) {
+      setHistory({
+        items: [],
+        database_configured: true,
+        database_message: "Inicia sesión para ver tu historial de combinadas.",
+        requires_auth: true,
+      });
+      setHistoryLoading(false);
+      return;
+    }
+
     setHistoryLoading(true);
     try {
-      const h = await fetchAccaHistory(30);
+      const h = await fetchAccaHistory(30, accessToken);
       setHistory(h);
     } catch {
       setHistory({
@@ -96,17 +111,23 @@ export function AccaBuilder() {
     } finally {
       setHistoryLoading(false);
     }
-  }, []);
+  }, [user, accessToken]);
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+    setResult(null);
+    setSaveNotice(null);
     void loadHistory();
-  }, [loadHistory]);
+  }, [authLoading, loadHistory, user?.id]);
 
   const generate = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setSaveNotice(null);
     try {
-      const data = await fetchSmartAcca(risk);
+      const data = await fetchSmartAcca(risk, { accessToken });
       setResult(data);
       if (data.pick_count === 0) {
         setError(
@@ -116,6 +137,13 @@ export function AccaBuilder() {
       } else {
         setError(null);
       }
+
+      if (data.meta.persist_status === "ok") {
+        setSaveNotice("Combinada guardada en tu historial.");
+      } else if (data.meta.persist_error === "login_required" && data.pick_count > 0) {
+        setSaveNotice("Inicia sesión para guardar esta combinada en tu historial.");
+      }
+
       await loadHistory();
     } catch {
       setError(
@@ -125,7 +153,7 @@ export function AccaBuilder() {
     } finally {
       setLoading(false);
     }
-  }, [risk, loadHistory]);
+  }, [risk, loadHistory, accessToken]);
 
   const expectedPicks = result?.profile.min_picks ?? 0;
   const showPicks = result && result.pick_count > 0;
@@ -195,6 +223,20 @@ export function AccaBuilder() {
           {error && !loading && (
             <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-50">
               {error}
+            </div>
+          )}
+
+          {saveNotice && !loading && (
+            <div className="mb-6 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-50">
+              {saveNotice}
+              {saveNotice.includes("Inicia sesión") ? (
+                <>
+                  {" "}
+                  <Link href="/login" className="font-semibold underline hover:text-white">
+                    Entrar
+                  </Link>
+                </>
+              ) : null}
             </div>
           )}
 
@@ -307,17 +349,29 @@ export function AccaBuilder() {
 
             {historyLoading && <p className="text-sm text-zinc-500">Cargando historial…</p>}
 
-            {!historyLoading && history && !history.database_configured && (
+            {!historyLoading && history?.requires_auth && (
+              <p className="text-sm text-zinc-500">
+                {history.database_message ?? "Inicia sesión para ver tu historial."}{" "}
+                <Link href="/login" className="font-semibold text-cyan-300 hover:text-cyan-200">
+                  Entrar
+                </Link>
+              </p>
+            )}
+
+            {!historyLoading && history && !history.database_configured && !history.requires_auth && (
               <p className="text-sm text-zinc-500">No hay historial disponible.</p>
             )}
 
-            {!historyLoading && history?.database_configured && history.items.length === 0 && (
+            {!historyLoading &&
+              history?.database_configured &&
+              !history.requires_auth &&
+              history.items.length === 0 && (
               <p className="text-sm text-zinc-500">
                 Aún no hay combinadas guardadas. Genera una para verla aquí.
               </p>
             )}
 
-            {!historyLoading && history && history.items.length > 0 && (
+            {!historyLoading && history && !history.requires_auth && history.items.length > 0 && (
               <ul className="divide-y divide-white/[0.06] rounded-xl border border-white/[0.06] bg-black/25">
                 {history.items.map((h) => (
                   <li

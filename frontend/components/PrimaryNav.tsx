@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { useAuth } from "@/components/auth/AuthProvider";
+
 const links = [
   { href: "/", label: "Home" },
   { href: "/matches", label: "Partidos" },
@@ -21,6 +23,7 @@ function linkIsActive(pathname: string, href: string) {
 
 export function PrimaryNav() {
   const pathname = usePathname();
+  const { user, isLoading, logout } = useAuth();
 
   return (
     <nav className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#050508]/80 px-4 py-3 backdrop-blur-xl sm:px-8 sm:py-3.5 lg:px-10">
@@ -32,7 +35,8 @@ export function PrimaryNav() {
           <span className="bg-gradient-to-r from-cyan-300 to-violet-300 bg-clip-text text-transparent">PREDIKTIA</span>
         </Link>
 
-        <ul className="flex flex-wrap items-center gap-x-1 gap-y-1 sm:justify-end sm:gap-x-0.5">
+        <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+        <ul className="flex flex-wrap items-center gap-x-1 gap-y-1 sm:gap-x-0.5">
           {links.map(({ href, label }) => {
             const active = linkIsActive(pathname, href);
             return (
@@ -68,6 +72,41 @@ export function PrimaryNav() {
             );
           })}
         </ul>
+
+        <div className="flex items-center gap-2 border-t border-white/10 pt-3 sm:border-t-0 sm:pt-0">
+          {isLoading ? (
+            <span className="text-xs text-zinc-500">...</span>
+          ) : user ? (
+            <>
+              <span className="hidden max-w-[10rem] truncate text-xs text-zinc-400 sm:inline">
+                {user.display_name || user.email}
+              </span>
+              <button
+                type="button"
+                onClick={logout}
+                className="rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 ring-1 ring-white/10 transition hover:bg-white/5 hover:text-white"
+              >
+                Salir
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition hover:text-white"
+              >
+                Entrar
+              </Link>
+              <Link
+                href="/register"
+                className="rounded-lg bg-gradient-to-r from-cyan-500 to-violet-500 px-3 py-2 text-sm font-semibold text-white shadow-[0_0_20px_-6px_rgba(139,92,246,0.8)] transition hover:opacity-90"
+              >
+                Registro
+              </Link>
+            </>
+          )}
+        </div>
+        </div>
       </div>
     </nav>
   );

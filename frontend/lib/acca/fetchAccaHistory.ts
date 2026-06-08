@@ -1,4 +1,5 @@
 import { API_URL } from "@/lib/api";
+import { authHeaders } from "@/lib/auth/headers";
 
 import type { AccaHistoryItem, AccaHistoryListResponse } from "./types";
 
@@ -25,10 +26,14 @@ function normalizeItem(raw: Record<string, unknown>): AccaHistoryItem {
   };
 }
 
-export async function fetchAccaHistory(limit = 30): Promise<AccaHistoryListResponse> {
+export async function fetchAccaHistory(
+  limit = 30,
+  accessToken?: string | null,
+): Promise<AccaHistoryListResponse> {
   const params = new URLSearchParams({ limit: String(limit) });
   const res = await fetch(`${API_URL}/acca/history?${params.toString()}`, {
     cache: "no-store",
+    headers: authHeaders(undefined, accessToken),
   });
   if (!res.ok) {
     throw new Error("history_unavailable");
@@ -37,6 +42,7 @@ export async function fetchAccaHistory(limit = 30): Promise<AccaHistoryListRespo
     items?: unknown[];
     database_configured?: boolean;
     database_message?: string | null;
+    requires_auth?: boolean;
   };
   const items = Array.isArray(data.items)
     ? data.items
@@ -48,5 +54,6 @@ export async function fetchAccaHistory(limit = 30): Promise<AccaHistoryListRespo
     items,
     database_configured: Boolean(data.database_configured),
     database_message: data.database_message ?? null,
+    requires_auth: Boolean(data.requires_auth),
   };
 }

@@ -1,10 +1,11 @@
 import { API_URL } from "@/lib/api";
+import { authHeaders } from "@/lib/auth/headers";
 
 import type { AccaRiskLevel, SmartAccaResponse } from "./types";
 
 export async function fetchSmartAcca(
   risk: AccaRiskLevel,
-  options?: { date?: string; fetchOdds?: boolean },
+  options?: { date?: string; fetchOdds?: boolean; accessToken?: string | null },
 ): Promise<SmartAccaResponse> {
   const params = new URLSearchParams({ risk });
   if (options?.date) {
@@ -16,6 +17,7 @@ export async function fetchSmartAcca(
 
   const res = await fetch(`${API_URL}/acca?${params.toString()}`, {
     cache: "no-store",
+    headers: authHeaders(undefined, options?.accessToken),
   });
   if (!res.ok) {
     throw new Error(

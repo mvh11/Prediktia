@@ -44,27 +44,37 @@ def _resolve_db_impl() -> tuple[Callable[..., Any], Callable[..., Any]] | None:
         return None
 
 
-def persist_smart_acca(settings: Settings, result: dict[str, Any]) -> tuple[str | None, str | None]:
+def persist_smart_acca(
+    settings: Settings,
+    result: dict[str, Any],
+    *,
+    user_id: int | None = None,
+) -> tuple[str | None, str | None]:
     if not settings.database_url:
         return None, "no_database_url"
     impl = _resolve_db_impl()
     if impl is None:
         return None, "no_sqlalchemy_impl_or_disabled"
     try:
-        return impl[0](settings, result)
+        return impl[0](settings, result, user_id=user_id)
     except Exception as exc:
         logger.exception("persist_smart_acca: error")
         return None, f"{type(exc).__name__}: {exc}"
 
 
-def list_acca_history(settings: Settings, *, limit: int = 50) -> list[dict[str, Any]]:
+def list_acca_history(
+    settings: Settings,
+    *,
+    limit: int = 50,
+    user_id: int | None = None,
+) -> list[dict[str, Any]]:
     if not settings.database_url:
         return []
     impl = _resolve_db_impl()
     if impl is None:
         return []
     try:
-        return impl[1](settings, limit=limit)
+        return impl[1](settings, limit=limit, user_id=user_id)
     except Exception:
         logger.exception("list_acca_history: error")
         return []

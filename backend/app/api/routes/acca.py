@@ -5,7 +5,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import ValidationError
 
+from app.api.deps.auth import get_optional_current_user
 from app.config import Settings, get_settings
+from app.schemas.auth import UserPublic
 from app.schemas.acca import AccaHistoryListResponse, SmartAccaResponse
 from app.services.acca_persistence import list_acca_history, persist_smart_acca
 from app.services.db_health import database_connected, database_status_message
@@ -94,6 +96,7 @@ def get_smart_acca(
         description="Enriquecer con cuotas API-Football (costoso; desactivado por defecto para el plan gratuito).",
     ),
     settings: Settings = Depends(get_settings),
+    current_user: UserPublic | None = Depends(get_optional_current_user),
 ) -> SmartAccaResponse:
     """Genera una combinada ACCA según el perfil de riesgo (motor simple Poisson + EV)."""
     requested_day: date
@@ -111,8 +114,9 @@ def get_smart_acca(
         auto_shifted = False
 
     logger.info(
-        "GET /acca risk=%s requested_date=%s resolved_date=%s",
+        "GET /acca risk=%s user_id=%s requested_date=%s resolved_date=%s",
         risk,
+        current_user.id if current_user else None,
         requested_day.isoformat(),
         resolved_day.isoformat(),
     )
@@ -163,14 +167,25 @@ def get_smart_acca(
         )
 
     try:
-        acca_id, persist_detail = persist_smart_acca(settings, result)
+        acca_id, persist_detail = persist_smart_acca(
+            settings,
+            result,
+            user_id=current_user.id if current_user else None,
+        )
         if acca_id:
             result["acca_id"] = acca_id
             result["meta"]["persist_status"] = "ok"
             result["meta"]["persist_error"] = None
-        elif persist_detail in ("no_database_url", "no_sqlalchemy_impl_or_disabled"):
+        elif persist_detail in (
+            "no_database_url",
+            "no_sqlalchemy_impl_or_disabled",
+            "no_picks_to_persist",
+        ):
             result["meta"]["persist_status"] = "skipped"
             result["meta"]["persist_error"] = None
+        elif persist_detail == "login_required":
+            result["meta"]["persist_status"] = "skipped"
+            result["meta"]["persist_error"] = "login_required"
         else:
             result["meta"]["persist_status"] = "failed"
             result["meta"]["persist_error"] = persist_detail
@@ -202,22 +217,30 @@ _HISTORY_UNAVAILABLE_MSG = "No hay historial disponible."
 def get_acca_history(
     limit: int = Query(default=30, ge=1, le=200),
     settings: Settings = Depends(get_settings),
+    current_user: UserPublic | None = Depends(get_optional_current_user),
 ) -> AccaHistoryListResponse:
-    """Historial de combinadas guardadas (PostgreSQL / Neon)."""
-    items = []
-    try:
-        items = list_acca_history(settings, limit=limit)
-    except Exception:
-        logger.exception("GET /acca/history: error inesperado")
-        items = []
-
-    configured = bool(items) or database_connected(settings, try_migrate=False)
+    """Historial de combinadas guardadas del usuario autenticado."""
+    configured = database_connected(settings, try_migrate=False)
     db_message: str | None = None
+    requires_auth = False
+    items = []
+
     if not configured:
         db_message = database_status_message(settings) or _HISTORY_UNAVAILABLE_MSG
+    elif current_user is None:
+        requires_auth = True
+        db_message = "Inicia sesión para ver tu historial de combinadas."
+    else:
+        try:
+            logger.info("GET /acca/history user_id=%s limit=%s", current_user.id, limit)
+            items = list_acca_history(settings, limit=limit, user_id=current_user.id)
+        except Exception:
+            logger.exception("GET /acca/history: error inesperado")
+            items = []
 
     return AccaHistoryListResponse(
         items=items,
         database_configured=configured,
         database_message=db_message,
+        requires_auth=requires_auth,
     )

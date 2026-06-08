@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import acca, debug_latam, matches, value_bets
+from app.api.routes import acca, auth, debug_latam, matches, value_bets
 from app.config import Settings, get_settings
 from app.db.migrations import ensure_database_schema
 from app.services.db_health import database_connected, inspect_db_health
@@ -83,6 +83,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(matches.router)
 app.include_router(value_bets.router)
 app.include_router(debug_latam.router)

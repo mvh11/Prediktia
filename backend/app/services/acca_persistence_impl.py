@@ -57,7 +57,12 @@ def _upsert_fixture_from_pick(db: Session, pick: dict[str, Any]) -> None:
     db.execute(stmt)
 
 
-def persist_smart_acca(settings: Settings, result: dict[str, Any]) -> tuple[str | None, str | None]:
+def persist_smart_acca(
+    settings: Settings,
+    result: dict[str, Any],
+    *,
+    user_id: int | None = None,
+) -> tuple[str | None, str | None]:
     """
     Guarda historial ACCA, picks en `predictions` (con acca_id) y upsert de fixtures.
 
@@ -76,9 +81,15 @@ def persist_smart_acca(settings: Settings, result: dict[str, Any]) -> tuple[str 
         day = None
 
     picks_in = [p for p in (result.get("picks") or []) if isinstance(p, dict)]
+    if not picks_in:
+        return None, "no_picks_to_persist"
+    if user_id is None:
+        return None, "login_required"
+
     logger.info(
-        "PERSIST_ACCA_START acca_id=%s picks=%s risk=%s total_odds=%s",
+        "PERSIST_ACCA_START acca_id=%s user_id=%s picks=%s risk=%s total_odds=%s",
         acca_id,
+        user_id,
         len(picks_in),
         result.get("risk"),
         result.get("total_odds"),
@@ -92,6 +103,7 @@ def persist_smart_acca(settings: Settings, result: dict[str, Any]) -> tuple[str 
 
             row = AccaHistoryRow(
                 acca_id=acca_id,
+                user_id=user_id,
                 risk_profile=str(result.get("risk") or "medium"),
                 fixture_date=day,
                 total_odds=float(result.get("total_odds") or 0.0),
@@ -259,8 +271,13 @@ def fetch_acca_db_last_debug(settings: Settings) -> dict[str, Any]:
         }
 
 
-def list_acca_history(settings: Settings, *, limit: int = 50) -> list[dict[str, Any]]:
-    if not settings.database_url:
+def list_acca_history(
+    settings: Settings,
+    *,
+    limit: int = 50,
+    user_id: int | None = None,
+) -> list[dict[str, Any]]:
+    if not settings.database_url or user_id is None:
         return []
     limit = max(1, min(limit, 200))
     try:
@@ -269,6 +286,7 @@ def list_acca_history(settings: Settings, *, limit: int = 50) -> list[dict[str, 
                 return []
             stmt = (
                 select(AccaHistoryRow)
+                .where(AccaHistoryRow.user_id == user_id)
                 .order_by(AccaHistoryRow.created_at.desc())
                 .limit(limit)
             )

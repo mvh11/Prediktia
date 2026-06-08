@@ -46,6 +46,7 @@ export type SmartAccaResponse = {
     resolved_date?: string;
     auto_shifted_date?: boolean;
     persist_status?: string;
+    persist_error?: string | null;
   };
   message?: string | null;
   acca_id?: string | null;
@@ -72,4 +73,5 @@ export type AccaHistoryListResponse = {
   items: AccaHistoryItem[];
   database_configured: boolean;
   database_message?: string | null;
+  requires_auth?: boolean;
 };
