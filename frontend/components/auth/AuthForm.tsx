@@ -42,10 +42,14 @@ export function AuthForm({ mode }: AuthFormProps) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-md rounded-2xl border border-white/10 bg-white/[0.03] p-8 shadow-[0_0_60px_-20px_rgba(139,92,246,0.45)]">
-      <h1 className="mb-2 text-2xl font-bold text-white">
+    <div className="relative mx-auto w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/55 p-8 shadow-[0_0_80px_-24px_rgba(139,92,246,0.65)] backdrop-blur-xl">
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/60 to-transparent"
+        aria-hidden
+      />
+      <h2 className="mb-2 text-xl font-bold text-white">
         {isRegister ? "Crear cuenta" : "Iniciar sesión"}
-      </h1>
+      </h2>
       <p className="mb-8 text-sm text-zinc-400">
         {isRegister
           ? "Regístrate para guardar tu progreso y acceder a funciones premium."

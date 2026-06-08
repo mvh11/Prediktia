@@ -1,18 +1,13 @@
 import { AuthForm } from "@/components/auth/AuthForm";
+import { AuthLayout } from "@/components/auth/AuthLayout";
 
 export default function RegisterPage() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-violet-950/40 via-[#050508] to-black px-4 py-12">
-      <div className="mb-8 text-center">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-violet-400/85">
-          Prediktia Intelligence
-        </p>
-        <h1 className="mt-2 bg-gradient-to-r from-cyan-300 to-violet-300 bg-clip-text text-3xl font-black text-transparent">
-          Crear cuenta
-        </h1>
-        <p className="mt-2 text-sm text-zinc-500">Regístrate para usar Prediktia</p>
-      </div>
+    <AuthLayout
+      title="Crear cuenta"
+      subtitle="Únete a Prediktia y guarda tus combinadas en tu perfil."
+    >
       <AuthForm mode="register" />
-    </div>
+    </AuthLayout>
   );
 }
