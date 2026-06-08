@@ -39,3 +39,6 @@ class ValueBetsResponse(BaseModel):
     picks: list[ValueBetPick]
     upstream_warning: str | None = None
     cache_stale: bool = False
+    plan_tier: str = "free"
+    plan_limited: bool = False
+    picks_limit: int | None = None

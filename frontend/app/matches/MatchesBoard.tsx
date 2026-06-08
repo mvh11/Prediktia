@@ -1,7 +1,15 @@
 "use client";
 
+import { PageShell } from "@/components/layout/PageShell";
+import { LeagueFilterBar } from "@/components/filters/LeagueFilterBar";
+
 import { useEffect, useMemo, useState } from "react";
 
+import {
+  buildLeagueCatalog,
+  formatLeagueLabel,
+  leagueKeyFromParts,
+} from "@/lib/leagues/catalog";
 import {
   fetchFormattedMatchesOnce,
   FormatMatchesError,
@@ -146,6 +154,14 @@ const TAB_ITEMS: { id: MatchTab; label: string }[] = [
   { id: "finished", label: "Finalizados" },
 ];
 
+function matchLeagueKey(m: FormattedMatch): string {
+  return leagueKeyFromParts(m.pais, m.liga);
+}
+
+function matchLeagueLabel(m: FormattedMatch): string {
+  return formatLeagueLabel(m.liga, m.pais);
+}
+
 function matchesSearchFilter(list: FormattedMatch[], query: string): FormattedMatch[] {
   const q = query.trim().toLowerCase();
   if (!q) {
@@ -165,6 +181,7 @@ export function MatchesBoard() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<MatchTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedLeagueKey, setSelectedLeagueKey] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -200,12 +217,40 @@ export function MatchesBoard() {
 
   const hasSearch = searchQuery.trim().length > 0;
 
+  const leagueCatalog = useMemo(() => {
+    if (!matches) {
+      return [];
+    }
+    return buildLeagueCatalog(
+      matches.map((m) => ({
+        key: matchLeagueKey(m),
+        label: matchLeagueLabel(m),
+        fixtureId: m.fixture_id,
+      })),
+    );
+  }, [matches]);
+
+  const totalMatchCount = matches?.length ?? 0;
+
+  useEffect(() => {
+    if (selectedLeagueKey == null) {
+      return;
+    }
+    if (!leagueCatalog.some((o) => o.key === selectedLeagueKey)) {
+      setSelectedLeagueKey(null);
+    }
+  }, [leagueCatalog, selectedLeagueKey]);
+
   const filteredMatches = useMemo(() => {
     if (!matches) {
       return null;
     }
-    return matchesSearchFilter(matches, searchQuery);
-  }, [matches, searchQuery]);
+    let list = matches;
+    if (selectedLeagueKey != null) {
+      list = list.filter((m) => matchLeagueKey(m) === selectedLeagueKey);
+    }
+    return matchesSearchFilter(list, searchQuery);
+  }, [matches, selectedLeagueKey, searchQuery]);
 
   const { live, upcoming, finished } = useMemo(() => {
     if (!filteredMatches) {
@@ -230,12 +275,27 @@ export function MatchesBoard() {
   const showToolbar = !loading && !error && matches && matches.length > 0;
   const noSearchResults =
     Boolean(filteredMatches && matches && matches.length > 0 && filteredMatches.length === 0 && hasSearch);
+  const noLeagueResults =
+    Boolean(
+      filteredMatches &&
+        matches &&
+        matches.length > 0 &&
+        filteredMatches.length === 0 &&
+        !hasSearch &&
+        selectedLeagueKey != null,
+    );
 
   const emptySearchHint =
     "Ningún partido coincide con tu búsqueda. Prueba con otro equipo, liga o limpia el filtro.";
 
+  const selectedLeagueLabel =
+    selectedLeagueKey == null
+      ? null
+      : (leagueCatalog.find((o) => o.key === selectedLeagueKey)?.label ?? null);
+
   return (
-    <div className="min-h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-950/40 via-zinc-950 to-black pb-16 pt-8">
+    <PageShell>
+      <div className="pb-16 pt-8">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <header className="mb-10 text-center sm:text-left">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400/80">
@@ -279,6 +339,15 @@ export function MatchesBoard() {
 
         {showToolbar && (
           <div className="mb-8 space-y-4">
+            <LeagueFilterBar
+              accent="emerald"
+              totalFixtureCount={totalMatchCount}
+              options={leagueCatalog}
+              selectedKey={selectedLeagueKey}
+              onSelect={setSelectedLeagueKey}
+              subtitle={`${leagueCatalog.length} competiciones disponibles`}
+            />
+
             <div className="-mx-1 overflow-x-auto pb-1 sm:mx-0">
               <div
                 className="flex min-w-0 gap-2 px-1 sm:flex-wrap sm:px-0"
@@ -362,7 +431,23 @@ export function MatchesBoard() {
           </p>
         )}
 
-        {!loading && !error && matches && matches.length > 0 && !noSearchResults && (
+        {noLeagueResults && (
+          <p className="mb-8 rounded-2xl border border-dashed border-zinc-700 bg-zinc-900/40 px-5 py-8 text-center text-sm text-zinc-400">
+            No hay partidos en{" "}
+            <span className="font-medium text-zinc-200">{selectedLeagueLabel ?? "esta liga"}</span>{" "}
+            para la fecha actual. Prueba otra competición o vuelve a{" "}
+            <button
+              type="button"
+              onClick={() => setSelectedLeagueKey(null)}
+              className="font-medium text-emerald-300 underline hover:text-emerald-200"
+            >
+              Todas las ligas
+            </button>
+            .
+          </p>
+        )}
+
+        {!loading && !error && matches && matches.length > 0 && !noSearchResults && !noLeagueResults && (
           <div className="space-y-12">
             {(tab === "all" || tab === "live") && (
               <Section
@@ -406,6 +491,7 @@ export function MatchesBoard() {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </PageShell>
   );
 }

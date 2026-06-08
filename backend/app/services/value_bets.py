@@ -480,3 +480,25 @@ def build_mock_positive_ev_picks(fixtures: list[Any]) -> list[dict[str, Any]]:
 
     out.sort(key=lambda r: r["ev"], reverse=True)
     return out
+
+
+_GRADE_RANK: dict[str, int] = {"elite": 0, "high": 1, "good": 2, "risky": 3}
+
+
+def sort_picks_for_free_tier[T](picks: list[T]) -> list[T]:
+    """
+    Free: prioriza calidad (elite/high/good) sobre risky, luego EV y confianza.
+    """
+
+    def sort_key(p: T) -> tuple[int, float, float]:
+        if isinstance(p, dict):
+            grade = p.get("value_grade", "risky")
+            ev = float(p.get("ev", 0))
+            prob = float(p.get("probabilidad", 0))
+        else:
+            grade = getattr(p, "value_grade", "risky")
+            ev = float(getattr(p, "ev", 0))
+            prob = float(getattr(p, "probabilidad", 0))
+        return (_GRADE_RANK.get(str(grade), 9), -ev, -prob)
+
+    return sorted(picks, key=sort_key)

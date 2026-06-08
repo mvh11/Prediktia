@@ -5,8 +5,10 @@
   "/dev/format-matches/page": "app/dev/format-matches/page.js",
   "/favicon.ico/route": "app/favicon.ico/route.js",
   "/legal/page": "app/legal/page.js",
+  "/login/page": "app/login/page.js",
   "/matches/page": "app/matches/page.js",
   "/page": "app/page.js",
   "/planes/page": "app/planes/page.js",
+  "/register/page": "app/register/page.js",
   "/value/page": "app/value/page.js"
 }

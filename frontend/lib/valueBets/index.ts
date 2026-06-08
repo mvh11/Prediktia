@@ -9,7 +9,7 @@ export {
 } from "./editorialFeedSort";
 export { computeConfidenceScore } from "./confidenceScore";
 export { buildFixtureValueGroups, pickHeroForFixture, sortPicksForFixtureDetail, type FixtureValueGroup } from "./fixtureValueGroups";
-export { fetchValueBetsOnce } from "./fetchValueBetsOnce";
+export { fetchValueBetsOnce, clearValueBetsCache, limitValuePicksForPlan } from "./fetchValueBetsOnce";
 export { formatHeroPickPill, formatPickOutcomeLabel, formatPickSummaryLine } from "./marketDisplay";
 export type { ValueBetPick, ValueBetsResponse } from "./types";
 export {

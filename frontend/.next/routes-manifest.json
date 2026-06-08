@@ -66,6 +66,12 @@
       "namedRegex": "^/legal(?:/)?$"
     },
     {
+      "page": "/login",
+      "regex": "^/login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/login(?:/)?$"
+    },
+    {
       "page": "/matches",
       "regex": "^/matches(?:/)?$",
       "routeKeys": {},
@@ -76,6 +82,12 @@
       "regex": "^/planes(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/planes(?:/)?$"
+    },
+    {
+      "page": "/register",
+      "regex": "^/register(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/register(?:/)?$"
     },
     {
       "page": "/value",

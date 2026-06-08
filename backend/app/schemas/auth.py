@@ -1,4 +1,10 @@
-from pydantic import BaseModel, EmailStr, Field
+from typing import Literal
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from app.services.plan_permissions import normalize_tier, tier_label
+
+UserTier = Literal["free", "premium", "vip", "admin"]
 
 
 class RegisterRequest(BaseModel):
@@ -16,7 +22,13 @@ class UserPublic(BaseModel):
     id: int
     email: str
     display_name: str
-    tier: str
+    tier: UserTier
+    tier_label: str = ""
+
+    @field_validator("tier", mode="before")
+    @classmethod
+    def _normalize_tier_field(cls, value: object) -> str:
+        return normalize_tier(str(value) if value is not None else None)
 
 
 class TokenResponse(BaseModel):

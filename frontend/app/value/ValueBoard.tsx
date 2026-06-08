@@ -1,6 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+
+import { useAuth } from "@/components/auth/AuthProvider";
+import { LeagueFilterBar } from "@/components/filters/LeagueFilterBar";
+import { PageShell } from "@/components/layout/PageShell";
+import {
+  buildLeagueCatalog,
+  formatLeagueLabel,
+  leagueKeyFromParts,
+  type LeagueCatalogEntry,
+} from "@/lib/leagues/catalog";
+import { canUseFullValueBets, FREE_VALUE_PICKS_LIMIT, normalizeTier } from "@/lib/plans";
 
 import {
   buildFixtureValueGroups,
@@ -9,7 +21,7 @@ import {
   effectiveCountry,
   effectiveLeagueName,
   fetchValueBetsOnce,
-  foldText,
+  limitValuePicksForPlan,
   formatHeroPickPill,
   formatPickOutcomeLabel,
   getLeagueTierForPick,
@@ -50,27 +62,16 @@ function pct1(n: number): string {
 
 /** Clave estable por competición (catálogo dinámico / filtro). */
 function leagueStableKey(pick: ValueBetPick): string {
-  const id = pick.league_id ?? 0;
-  if (id > 0) {
-    return `id:${id}`;
-  }
-  const c = foldText(effectiveCountry(pick));
-  const n = foldText(effectiveLeagueName(pick));
-  const l = foldText(pick.liga);
-  return `txt:${c}|${n}|${l}`;
+  return leagueKeyFromParts(
+    effectiveCountry(pick),
+    pick.liga.trim() || effectiveLeagueName(pick),
+    pick.league_id,
+  );
 }
 
 function leagueDisplayLabel(pick: ValueBetPick): string {
-  const raw = pick.liga.trim();
-  if (raw) {
-    return raw;
-  }
-  const name = effectiveLeagueName(pick).trim();
-  const country = effectiveCountry(pick).trim();
-  if (name && country) {
-    return `${name} (${country})`;
-  }
-  return name || country || "—";
+  const name = pick.liga.trim() || effectiveLeagueName(pick);
+  return formatLeagueLabel(name, effectiveCountry(pick));
 }
 
 function gradeRowBadgeClass(grade: ValueGrade): string {
@@ -275,145 +276,6 @@ function FixtureValueCard({ group, featured = false }: { group: FixtureValueGrou
   );
 }
 
-type LeagueCatalogEntry = { key: string; label: string; fixtureCount: number };
-
-function StickyLeagueFilterBar({
-  totalFixtureCount,
-  options,
-  selectedKey,
-  onSelect,
-  leagueCount,
-}: {
-  totalFixtureCount: number;
-  options: LeagueCatalogEntry[];
-  selectedKey: string | null;
-  onSelect: (key: string | null) => void;
-  leagueCount: number;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const close = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [open]);
-
-  const filteredOptions = useMemo(() => {
-    const q = foldText(query);
-    if (!q) {
-      return options;
-    }
-    return options.filter((o) => foldText(o.label).includes(q) || foldText(o.key).includes(q));
-  }, [options, query]);
-
-  const currentLabel =
-    selectedKey == null
-      ? `Todas las ligas (${totalFixtureCount})`
-      : (() => {
-          const o = options.find((x) => x.key === selectedKey);
-          if (!o) {
-            return "Liga —";
-          }
-          return `${o.label} (${o.fixtureCount})`;
-        })();
-
-  return (
-    <div
-      ref={rootRef}
-      className="sticky top-0 z-40 mb-4 rounded-xl border border-cyan-500/25 bg-zinc-950/95 p-3 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.85)] backdrop-blur-md sm:p-4"
-    >
-      <div className="mb-2 flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400/80">Filtro por liga</p>
-        <p className="text-[10px] text-zinc-500">
-          <span className="font-mono tabular-nums text-zinc-400">{leagueCount}</span> competiciones con picks
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Buscar por nombre de liga…"
-          className="min-h-[44px] min-w-0 flex-1 rounded-lg border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white outline-none ring-cyan-500/30 placeholder:text-zinc-600 focus:border-cyan-500/40 focus:ring-2 sm:min-h-0"
-          aria-label="Buscar liga"
-        />
-        <div className="relative min-w-0 sm:min-w-[14rem] sm:max-w-[min(100%,20rem)]">
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-lg border border-white/15 bg-zinc-900/80 px-3 py-2.5 text-left text-sm font-medium text-zinc-100 transition hover:border-cyan-500/35 hover:bg-zinc-900 sm:min-h-0"
-            aria-expanded={open}
-            aria-haspopup="listbox"
-          >
-            <span className="truncate">{currentLabel}</span>
-            <span className="shrink-0 text-zinc-500" aria-hidden>
-              {open ? "▲" : "▼"}
-            </span>
-          </button>
-          {open && (
-            <ul
-              className="absolute left-0 right-0 z-50 mt-1 max-h-[min(50vh,16rem)] overflow-y-auto rounded-lg border border-white/15 bg-zinc-950 py-1 shadow-xl ring-1 ring-black/40 sm:max-h-72"
-              role="listbox"
-            >
-              <li role="presentation">
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={selectedKey == null}
-                  onClick={() => {
-                    onSelect(null);
-                    setOpen(false);
-                  }}
-                  className={`flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-white/5 ${
-                    selectedKey == null ? "bg-cyan-500/15 text-cyan-100" : "text-zinc-200"
-                  }`}
-                >
-                  <span className="truncate">Todas las ligas</span>
-                  <span className="shrink-0 tabular-nums text-zinc-500">({totalFixtureCount})</span>
-                </button>
-              </li>
-              {filteredOptions.map((o) => (
-                <li key={o.key} role="presentation">
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={selectedKey === o.key}
-                    onClick={() => {
-                      onSelect(o.key);
-                      setOpen(false);
-                    }}
-                    className={`flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-white/5 ${
-                      selectedKey === o.key ? "bg-cyan-500/15 text-cyan-100" : "text-zinc-200"
-                    }`}
-                  >
-                    <span className="min-w-0 flex-1 truncate" title={o.label}>
-                      {o.label}
-                    </span>
-                    <span className="shrink-0 tabular-nums text-zinc-500">({o.fixtureCount})</span>
-                  </button>
-                </li>
-              ))}
-              {filteredOptions.length === 0 && (
-                <li className="px-3 py-4 text-center text-xs text-zinc-500">Sin coincidencias</li>
-              )}
-            </ul>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function SkeletonGrid() {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -439,6 +301,9 @@ function SkeletonGrid() {
 }
 
 export function ValueBoard() {
+  const { accessToken, user, isLoading: authLoading } = useAuth();
+  const userTier = normalizeTier(user?.tier);
+  const fullValue = canUseFullValueBets(userTier);
   const [payload, setPayload] = useState<ValueBetsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -448,8 +313,16 @@ export function ValueBoard() {
   const [selectedLeagueKey, setSelectedLeagueKey] = useState<string | null>(null);
 
   useEffect(() => {
+    console.info("[ValueBoard] tier detectado:", userTier, "fullValue:", fullValue);
+  }, [userTier, fullValue]);
+
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
     let cancelled = false;
-    fetchValueBetsOnce()
+    setLoading(true);
+    fetchValueBetsOnce(accessToken, userTier)
       .then((data) => {
         if (!cancelled) {
           setPayload(data);
@@ -469,13 +342,21 @@ export function ValueBoard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [accessToken, authLoading, userTier]);
+
+  const rawPicks = useMemo(
+    () =>
+      limitValuePicksForPlan(payload?.picks ?? [], {
+        fullValue,
+        picksLimit: payload?.picks_limit ?? FREE_VALUE_PICKS_LIMIT,
+        planLimited: payload?.plan_limited ?? !fullValue,
+      }),
+    [payload, fullValue],
+  );
 
   useEffect(() => {
     setVisibleCount(20);
-  }, [payload, showExcludedStatuses, showMinorLeagues, selectedLeagueKey]);
-
-  const rawPicks = useMemo(() => payload?.picks ?? [], [payload]);
+  }, [payload, showExcludedStatuses, showMinorLeagues, selectedLeagueKey, rawPicks.length]);
 
   const excludedCancelledCount = useMemo(
     () => rawPicks.filter((p) => isCancelledOrPostponed(p.estado_partido)).length,
@@ -493,23 +374,13 @@ export function ValueBoard() {
   );
 
   const leagueCatalog = useMemo((): LeagueCatalogEntry[] => {
-    const map = new Map<string, { label: string; fixtures: Set<number> }>();
-    for (const p of picksAfterCancelFilter) {
-      const key = leagueStableKey(p);
-      let row = map.get(key);
-      if (!row) {
-        row = { label: leagueDisplayLabel(p), fixtures: new Set() };
-        map.set(key, row);
-      }
-      row.fixtures.add(p.fixture_id);
-    }
-    return [...map.entries()]
-      .map(([key, v]) => ({
-        key,
-        label: v.label,
-        fixtureCount: v.fixtures.size,
-      }))
-      .sort((a, b) => b.fixtureCount - a.fixtureCount || a.label.localeCompare(b.label, "es"));
+    return buildLeagueCatalog(
+      picksAfterCancelFilter.map((p) => ({
+        key: leagueStableKey(p),
+        label: leagueDisplayLabel(p),
+        fixtureId: p.fixture_id,
+      })),
+    );
   }, [picksAfterCancelFilter]);
 
   const totalCatalogFixtures = useMemo(() => {
@@ -598,7 +469,8 @@ export function ValueBoard() {
   const canLoadMore = visibleCount < gridFixtures.length;
 
   return (
-    <div className="min-h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-cyan-950/35 via-zinc-950 to-black pb-16 pt-8 text-white">
+    <PageShell>
+      <div className="pb-16 pt-8">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <header className="mb-10 text-center sm:text-left">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-400/85">Prediktia</p>
@@ -613,13 +485,28 @@ export function ValueBoard() {
           </p>
         </header>
 
+        {!loading && !fullValue && rawPicks.length > 0 ? (
+          <div className="mb-8 rounded-xl border border-cyan-500/30 bg-gradient-to-r from-cyan-500/10 via-violet-500/10 to-transparent px-4 py-3.5 text-sm text-cyan-50 ring-1 ring-cyan-400/20">
+            Plan Free: estás viendo{" "}
+            <span className="font-semibold tabular-nums">
+              {payload?.picks_limit ?? FREE_VALUE_PICKS_LIMIT}
+            </span>{" "}
+            picks disponibles.{" "}
+            <Link href="/planes" className="font-semibold text-cyan-200 underline hover:text-white">
+              Mejora a Premium
+            </Link>{" "}
+            para desbloquear todos los value bets.
+          </div>
+        ) : null}
+
         {!loading && !error && payload && rawPicks.length > 0 && (
-          <StickyLeagueFilterBar
+          <LeagueFilterBar
+            accent="cyan"
             totalFixtureCount={totalCatalogFixtures}
             options={leagueCatalog}
             selectedKey={selectedLeagueKey}
             onSelect={setSelectedLeagueKey}
-            leagueCount={leagueCatalog.length}
+            subtitle={`${leagueCatalog.length} competiciones con picks`}
           />
         )}
 
@@ -852,6 +739,7 @@ export function ValueBoard() {
           </>
         )}
       </div>
-    </div>
+      </div>
+    </PageShell>
   );
 }

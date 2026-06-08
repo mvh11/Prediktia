@@ -151,6 +151,30 @@
         "x-next-revalidate-tag-token"
       ]
     },
+    "/login": {
+      "experimentalBypassFor": [
+        {
+          "type": "header",
+          "key": "next-action"
+        },
+        {
+          "type": "header",
+          "key": "content-type",
+          "value": "multipart/form-data;.*"
+        }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/login",
+      "dataRoute": "/login.rsc",
+      "allowHeader": [
+        "host",
+        "x-matched-path",
+        "x-prerender-revalidate",
+        "x-prerender-revalidate-if-generated",
+        "x-next-revalidated-tags",
+        "x-next-revalidate-tag-token"
+      ]
+    },
     "/matches": {
       "experimentalBypassFor": [
         {
@@ -199,6 +223,30 @@
         "x-next-revalidate-tag-token"
       ]
     },
+    "/register": {
+      "experimentalBypassFor": [
+        {
+          "type": "header",
+          "key": "next-action"
+        },
+        {
+          "type": "header",
+          "key": "content-type",
+          "value": "multipart/form-data;.*"
+        }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/register",
+      "dataRoute": "/register.rsc",
+      "allowHeader": [
+        "host",
+        "x-matched-path",
+        "x-prerender-revalidate",
+        "x-prerender-revalidate-if-generated",
+        "x-next-revalidated-tags",
+        "x-next-revalidate-tag-token"
+      ]
+    },
     "/value": {
       "experimentalBypassFor": [
         {
@@ -227,8 +275,8 @@
   "dynamicRoutes": {},
   "notFoundRoutes": [],
   "preview": {
-    "previewModeId": "3f80d4a0d194a8819a76257e6924fe8b",
-    "previewModeSigningKey": "6212133e01ca70c74cdba136d24900d73de5451d9ed3d14f9cfec6587c70b93e",
-    "previewModeEncryptionKey": "a93b52230d98277ecfaa514c11186707924fb667032b5a7200f303d50b0dc95a"
+    "previewModeId": "abed0907a8de9889e0f48b6eec9e8f67",
+    "previewModeSigningKey": "3e1f4631389b30b5123593c8760feaf95e310d6cb9f499a34b5d8ea61f1951be",
+    "previewModeEncryptionKey": "2cce59f5f0988d7bd1c00876d747e494ec9b8f5578cf5b3554b90c8f8e86bb1f"
   }
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import { normalizeTier, tierLabel } from "@/lib/plans";
 
 const links = [
   { href: "/", label: "Home" },
@@ -78,9 +79,14 @@ export function PrimaryNav() {
             <span className="text-xs text-zinc-500">...</span>
           ) : user ? (
             <>
-              <span className="hidden max-w-[10rem] truncate text-xs text-zinc-400 sm:inline">
-                {user.display_name || user.email}
-              </span>
+              <div className="hidden items-center gap-2 sm:flex">
+                <span className="max-w-[9rem] truncate text-xs text-zinc-400">
+                  {user.display_name || user.email}
+                </span>
+                <span className="rounded-md bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-200 ring-1 ring-violet-400/25">
+                  {user.tier_label || tierLabel(normalizeTier(user.tier))}
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={logout}

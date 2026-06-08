@@ -4,13 +4,16 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.api.deps.auth import get_optional_current_user
 from app.config import Settings, get_settings
+from app.schemas.auth import UserPublic
 from app.schemas.value_bets import ValueBetPick, ValueBetsResponse
+from app.services.plan_permissions import normalize_tier, value_picks_cap
 from app.services.acca_fixture_filter import filter_and_sort_fixtures_for_acca
 from app.services.football_api import extract_cache_meta, fetch_fixtures_by_date_cached
 from app.services.pipeline_debug import log_all_fixtures_pipeline
 from app.services.smart_acca import resolve_acca_calendar_day_for_pre_match
-from app.services.value_bets import build_mock_positive_ev_picks
+from app.services.value_bets import build_mock_positive_ev_picks, sort_picks_for_free_tier
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +40,7 @@ def list_value_bets(
         description="Misma semántica que /matches: fecha UTC YYYY-MM-DD.",
     ),
     settings: Settings = Depends(get_settings),
+    current_user: UserPublic | None = Depends(get_optional_current_user),
 ) -> ValueBetsResponse:
     """
     Picks con EV positivo desde fixtures cacheados (misma caché que /matches y /acca).
@@ -97,6 +101,38 @@ def list_value_bets(
 
     raw_picks = build_mock_positive_ev_picks(prematch_fixtures)
     picks = [ValueBetPick.model_validate(p) for p in raw_picks]
+    total_available = len(picks)
+
+    user_tier = normalize_tier(current_user.tier if current_user else "free")
+    cap = value_picks_cap(user_tier)
+    plan_limited = cap is not None
+    user_id = current_user.id if current_user else None
+
+    logger.info(
+        "value-bets auth tier=%s user_id=%s authenticated=%s total=%s",
+        user_tier,
+        user_id,
+        current_user is not None,
+        total_available,
+    )
+
+    if cap is not None:
+        picks = sort_picks_for_free_tier(picks)[:cap]
+        logger.info(
+            "value-bets tier=%s user_id=%s total=%s returned=%s plan_limited=true",
+            user_tier,
+            user_id,
+            total_available,
+            len(picks),
+        )
+    else:
+        logger.info(
+            "value-bets tier=%s user_id=%s total=%s returned=%s plan_limited=false",
+            user_tier,
+            user_id,
+            total_available,
+            len(picks),
+        )
 
     if len(picks) == 0:
         logger.warning(
@@ -121,4 +157,7 @@ def list_value_bets(
         picks=picks,
         upstream_warning=warning,
         cache_stale=stale,
+        plan_tier=user_tier,
+        plan_limited=plan_limited,
+        picks_limit=cap,
     )

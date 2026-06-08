@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -13,6 +14,7 @@ import {
 import { fetchCurrentUser, loginRequest, registerRequest } from "@/lib/auth/api";
 import { clearAuthSession, readAuthSession, writeAuthSession } from "@/lib/auth/storage";
 import type { AuthUser } from "@/lib/auth/types";
+import { clearValueBetsCache } from "@/lib/valueBets/fetchValueBetsOnce";
 
 type AuthContextValue = {
   user: AuthUser | null;
@@ -69,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
+    clearValueBetsCache();
     const session = await loginRequest(email, password);
     writeAuthSession(session);
     setUser(session.user);
@@ -76,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(async (email: string, password: string, displayName?: string) => {
+    clearValueBetsCache();
     const session = await registerRequest(email, password, displayName);
     writeAuthSession(session);
     setUser(session.user);
@@ -83,10 +87,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    clearValueBetsCache();
     clearAuthSession();
     setUser(null);
     setAccessToken(null);
   }, []);
+
+  const prevAuthKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const authKey = `${accessToken ?? ""}::${user?.tier ?? "anon"}`;
+    if (prevAuthKeyRef.current !== null && prevAuthKeyRef.current !== authKey) {
+      clearValueBetsCache();
+    }
+    prevAuthKeyRef.current = authKey;
+  }, [accessToken, user?.tier]);
 
   const value = useMemo(
     () => ({ user, accessToken, isLoading, login, register, logout }),

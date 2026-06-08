@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import { PageShell } from "@/components/layout/PageShell";
+
 export const metadata: Metadata = {
   title: "Legal · Prediktia",
   description: "Aviso legal, uso responsable y limitación de responsabilidad.",
@@ -34,7 +36,8 @@ const sections = [
 
 export default function LegalPage() {
   return (
-    <div className="min-h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-violet-950/25 via-zinc-950 to-black pb-24 pt-10 text-white">
+    <PageShell>
+      <div className="pb-24 pt-10">
       <div className="mx-auto max-w-3xl px-4 sm:px-6">
         <header className="mb-12">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-violet-400/85">
@@ -70,6 +73,7 @@ export default function LegalPage() {
           Última actualización: demo académica · Prediktia Intelligence
         </p>
       </div>
-    </div>
+      </div>
+    </PageShell>
   );
 }

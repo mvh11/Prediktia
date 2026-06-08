@@ -11,6 +11,7 @@ from app.schemas.auth import UserPublic
 from app.schemas.acca import AccaHistoryListResponse, SmartAccaResponse
 from app.services.acca_persistence import list_acca_history, persist_smart_acca
 from app.services.db_health import database_connected, database_status_message
+from app.services.plan_permissions import can_use_smart_acca, history_cap, normalize_tier
 from app.services.smart_acca import (
     RiskLevel,
     SIMPLE_PROFILES,
@@ -113,13 +114,30 @@ def get_smart_acca(
         resolved_day = requested_day
         auto_shifted = False
 
+    user_tier = normalize_tier(current_user.tier if current_user else "free")
+
     logger.info(
-        "GET /acca risk=%s user_id=%s requested_date=%s resolved_date=%s",
+        "GET /acca risk=%s user_id=%s tier=%s requested_date=%s resolved_date=%s",
         risk,
         current_user.id if current_user else None,
+        user_tier,
         requested_day.isoformat(),
         resolved_day.isoformat(),
     )
+
+    if not can_use_smart_acca(user_tier):
+        logger.info("GET /acca bloqueado tier=%s (requiere Premium)", user_tier)
+        blocked = _safe_empty_acca(
+            resolved_day,
+            risk,
+            "Smart ACCA requiere plan Premium o VIP. Mejora tu plan en /planes.",
+        )
+        blocked["meta"]["requested_date"] = requested_day.isoformat()
+        blocked["meta"]["resolved_date"] = resolved_day.isoformat()
+        blocked["meta"]["auto_shifted_date"] = auto_shifted
+        blocked["meta"]["persist_status"] = "skipped"
+        blocked["meta"]["persist_error"] = "plan_upgrade_required"
+        return SmartAccaResponse.model_validate(blocked)
 
     try:
         result = generate_acca_for_date(settings, resolved_day, risk, fetch_odds=fetch_odds)
@@ -232,8 +250,17 @@ def get_acca_history(
         db_message = "Inicia sesión para ver tu historial de combinadas."
     else:
         try:
-            logger.info("GET /acca/history user_id=%s limit=%s", current_user.id, limit)
-            items = list_acca_history(settings, limit=limit, user_id=current_user.id)
+            effective_limit = history_cap(current_user.tier, limit)
+            logger.info(
+                "GET /acca/history user_id=%s tier=%s limit=%s effective=%s",
+                current_user.id,
+                current_user.tier,
+                limit,
+                effective_limit,
+            )
+            items = list_acca_history(
+                settings, limit=effective_limit, user_id=current_user.id
+            )
         except Exception:
             logger.exception("GET /acca/history: error inesperado")
             items = []

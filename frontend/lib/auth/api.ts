@@ -72,5 +72,11 @@ export async function fetchCurrentUser(token: string): Promise<AuthUser> {
     throw new Error("Sesión expirada.");
   }
 
-  return (await res.json()) as AuthUser;
+  const raw = (await res.json()) as AuthUser & { tier?: string };
+  const tier = raw.tier ?? "free";
+  return {
+    ...raw,
+    tier: tier as AuthUser["tier"],
+    tier_label: raw.tier_label ?? tier,
+  };
 }

@@ -8,6 +8,7 @@ from app.config import Settings, get_settings
 from app.db.session import session_scope
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserPublic
 from app.services.auth_tokens import create_access_token
+from app.services.plan_permissions import normalize_tier, tier_label
 from app.services.users import authenticate_user, create_user, get_user_by_email
 
 logger = logging.getLogger(__name__)
@@ -25,11 +26,13 @@ def _require_database(settings: Settings) -> str:
 
 
 def _to_public_user(user) -> UserPublic:
+    tier = normalize_tier(getattr(user, "tier", None))
     return UserPublic(
         id=user.id,
         email=user.email,
         display_name=user.display_name,
-        tier=user.tier,
+        tier=tier,
+        tier_label=tier_label(tier),
     )
 
 

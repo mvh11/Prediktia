@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import { PremiumGate } from "@/components/plans/PremiumGate";
+import { PageShell } from "@/components/layout/PageShell";
+import { canUseSmartAcca, normalizeTier } from "@/lib/plans";
 import {
   fetchAccaHistory,
   fetchSmartAcca,
@@ -85,6 +88,8 @@ export function AccaBuilder() {
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
 
   const theme = riskTheme(result?.risk ?? risk);
+  const userTier = normalizeTier(user?.tier);
+  const accaAllowed = canUseSmartAcca(userTier);
 
   const loadHistory = useCallback(async () => {
     if (!user) {
@@ -159,7 +164,8 @@ export function AccaBuilder() {
   const showPicks = result && result.pick_count > 0;
 
   return (
-    <div className="min-h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-violet-950/30 via-zinc-950 to-black pb-20 pt-8 text-white">
+    <PageShell>
+    <div className="pb-20 pt-8">
         <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
           <header className="mb-10 text-center sm:text-left">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-violet-400/85">
@@ -202,7 +208,17 @@ export function AccaBuilder() {
               })}
             </div>
 
-            <div className="mt-6">
+            {!accaAllowed ? (
+              <div className="mt-6">
+                <PremiumGate
+                  feature="Smart ACCA"
+                  title="Smart ACCA es Premium"
+                  description="Tu plan Free incluye partidos y hasta 3 value picks. Mejora a Premium para generar combinadas y guardar historial completo."
+                  compact
+                />
+              </div>
+            ) : (
+              <div className="mt-6">
                 <button
                   type="button"
                   onClick={() => void generate()}
@@ -212,6 +228,7 @@ export function AccaBuilder() {
                   {loading ? "Generando combinada…" : "Generar combinada"}
                 </button>
               </div>
+            )}
           </section>
 
           {loading && (
@@ -420,5 +437,6 @@ export function AccaBuilder() {
           )}
         </div>
       </div>
+    </PageShell>
   );
 }

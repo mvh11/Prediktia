@@ -5,8 +5,10 @@
   "/dev/format-matches/page": "/dev/format-matches",
   "/favicon.ico/route": "/favicon.ico",
   "/legal/page": "/legal",
+  "/login/page": "/login",
   "/matches/page": "/matches",
   "/page": "/",
   "/planes/page": "/planes",
+  "/register/page": "/register",
   "/value/page": "/value"
 }

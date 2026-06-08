@@ -35,4 +35,7 @@ export type ValueBetsResponse = {
   picks: ValueBetPick[];
   upstream_warning?: string | null;
   cache_stale?: boolean;
+  plan_tier?: string;
+  plan_limited?: boolean;
+  picks_limit?: number | null;
 };
