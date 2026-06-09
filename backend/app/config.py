@@ -98,6 +98,48 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("JWT_EXPIRE_MINUTES", "jwt_expire_minutes"),
     )
 
+    # Transbank Webpay Plus (solo backend — nunca exponer al frontend).
+    webpay_env: str = Field(
+        default="integration",
+        validation_alias=AliasChoices("WEBPAY_ENV", "webpay_env"),
+    )
+    webpay_commerce_code: str = Field(
+        default="",
+        validation_alias=AliasChoices("WEBPAY_COMMERCE_CODE", "webpay_commerce_code"),
+    )
+    webpay_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("WEBPAY_API_KEY", "webpay_api_key"),
+    )
+    webpay_return_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("WEBPAY_RETURN_URL", "webpay_return_url"),
+    )
+    frontend_url: str = Field(
+        default="http://localhost:3000",
+        validation_alias=AliasChoices("FRONTEND_URL", "frontend_url"),
+    )
+
+    @field_validator(
+        "webpay_commerce_code",
+        "webpay_api_key",
+        "webpay_return_url",
+        "frontend_url",
+        mode="before",
+    )
+    @classmethod
+    def _strip_webpay_strings(cls, value: object) -> str:
+        if value is None:
+            return ""
+        return str(value).strip().strip('"').strip("'")
+
+    def webpay_configured(self) -> bool:
+        return bool(
+            self.webpay_commerce_code.strip()
+            and self.webpay_api_key.strip()
+            and self.webpay_return_url.strip()
+        )
+
 
 @lru_cache
 def get_settings() -> Settings:

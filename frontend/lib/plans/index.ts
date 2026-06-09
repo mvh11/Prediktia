@@ -10,5 +10,5 @@ export {
   tierRank,
   TIER_LABELS,
 } from "./permissions";
-export { startPremiumCheckout, startVipContact } from "./transbank";
+export { startPremiumCheckout, startVipContact, redirectToWebpay, isCheckoutFailure } from "./transbank";
 export type { PlanDefinition, PlanFeature, PlanId } from "./types";

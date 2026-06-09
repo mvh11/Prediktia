@@ -1,38 +1,80 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   PLANS,
   normalizeTier,
+  redirectToWebpay,
   startPremiumCheckout,
   startVipContact,
+  isCheckoutFailure,
   tierLabel,
   tierRank,
 } from "@/lib/plans";
 
+type PaymentBanner = "success" | "failed" | null;
+
 export function PlansPage() {
-  const { user } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { user, accessToken, isLoading: authLoading, refreshUser } = useAuth();
   const currentTier = normalizeTier(user?.tier);
   const currentRank = tierRank(currentTier);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<PaymentBanner>(null);
+
+  useEffect(() => {
+    const value = searchParams.get("payment");
+    if (value === "success" || value === "failed") {
+      setPaymentStatus(value);
+      router.replace("/planes", { scroll: false });
+    }
+  }, [searchParams, router]);
+
+  useEffect(() => {
+    if (paymentStatus !== "success") {
+      return;
+    }
+    void refreshUser();
+  }, [paymentStatus, refreshUser]);
 
   const handleCta = useCallback(
     async (variant: "free" | "premium" | "vip", planId: string) => {
       if (planId === currentTier) return;
+
+      if (variant === "premium") {
+        if (!accessToken) {
+          setNotice("Inicia sesión o crea una cuenta para contratar Premium con Webpay.");
+          return;
+        }
+      }
+
       setNotice(null);
       setBusy(planId);
       try {
-        const result =
-          variant === "premium" ? await startPremiumCheckout() : await startVipContact();
-        setNotice(result.message);
+        if (variant === "premium") {
+          const result = await startPremiumCheckout(accessToken!);
+          if (isCheckoutFailure(result)) {
+            setNotice(result.message);
+            return;
+          }
+          redirectToWebpay(result.url, result.token);
+          return;
+        }
+
+        const vipResult = await startVipContact();
+        if (isCheckoutFailure(vipResult)) {
+          setNotice(vipResult.message);
+        }
       } finally {
         setBusy(null);
       }
     },
-    [currentTier],
+    [accessToken, currentTier],
   );
 
   return (
@@ -62,7 +104,8 @@ export function PlansPage() {
             </span>
           </h1>
           <p className="mt-4 text-sm leading-relaxed text-zinc-400 sm:text-base">
-            Value bets, Smart ACCA e historial según tu nivel. Pagos con Transbank — próximamente.
+            Value bets, Smart ACCA e historial según tu nivel. Premium se activa al instante tras
+            pagar con Transbank Webpay Plus.
           </p>
           {user ? (
             <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm">
@@ -72,8 +115,36 @@ export function PlansPage() {
                 {user.tier_label || tierLabel(currentTier)}
               </span>
             </div>
+          ) : !authLoading ? (
+            <p className="mt-6 text-sm text-zinc-500">
+              <span className="text-zinc-400">Inicia sesión</span> para contratar Premium con Webpay.
+            </p>
           ) : null}
         </header>
+
+        {paymentStatus === "success" ? (
+          <div
+            role="status"
+            className="mx-auto mt-8 max-w-2xl rounded-xl border border-emerald-500/35 bg-gradient-to-r from-emerald-500/15 via-cyan-500/10 to-transparent px-5 py-4 text-sm text-emerald-50 ring-1 ring-emerald-400/25"
+          >
+            <p className="font-semibold text-emerald-100">¡Pago aprobado!</p>
+            <p className="mt-1 text-emerald-200/90">
+              Tu plan Premium ya está activo. Disfruta value bets completos y Smart ACCA sin límites.
+            </p>
+          </div>
+        ) : null}
+
+        {paymentStatus === "failed" ? (
+          <div
+            role="alert"
+            className="mx-auto mt-8 max-w-2xl rounded-xl border border-red-500/35 bg-red-950/40 px-5 py-4 text-sm text-red-100 ring-1 ring-red-400/20"
+          >
+            <p className="font-semibold">Pago no completado</p>
+            <p className="mt-1 text-red-200/90">
+              El pago fue rechazado o cancelado. Puedes intentarlo de nuevo cuando quieras.
+            </p>
+          </div>
+        ) : null}
 
         {notice ? (
           <div
@@ -186,7 +257,7 @@ export function PlansPage() {
                       ? "Plan activo"
                       : isUpgrade
                         ? busy === plan.id
-                          ? "Procesando…"
+                          ? "Redirigiendo a Webpay…"
                           : plan.cta
                         : plan.ctaVariant === "free"
                           ? "Incluido"
@@ -199,8 +270,8 @@ export function PlansPage() {
         </div>
 
         <p className="mx-auto mt-10 max-w-xl text-center text-xs text-zinc-600">
-          Los pagos con Transbank (Webpay Plus) se activarán en una próxima versión. No se almacenan
-          datos de tarjeta en Prediktia.
+          Pagos procesados por Transbank Webpay Plus. Prediktia no almacena datos de tarjeta; solo
+          registramos el estado del pago y tu plan activo.
         </p>
       </div>
     </div>

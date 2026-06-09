@@ -23,6 +23,7 @@ type AuthContextValue = {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName?: string) => Promise<void>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -93,6 +94,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccessToken(null);
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    const token = accessToken ?? readAuthSession()?.access_token ?? null;
+    if (!token) {
+      return;
+    }
+    try {
+      const current = await fetchCurrentUser(token);
+      setUser(current);
+      setAccessToken(token);
+      clearValueBetsCache();
+    } catch {
+      /* sesión inválida — no forzar logout desde planes */
+    }
+  }, [accessToken]);
+
   const prevAuthKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const authKey = `${accessToken ?? ""}::${user?.tier ?? "anon"}`;
@@ -103,8 +119,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [accessToken, user?.tier]);
 
   const value = useMemo(
-    () => ({ user, accessToken, isLoading, login, register, logout }),
-    [user, accessToken, isLoading, login, register, logout],
+    () => ({ user, accessToken, isLoading, login, register, logout, refreshUser }),
+    [user, accessToken, isLoading, login, register, logout, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

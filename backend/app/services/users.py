@@ -42,3 +42,12 @@ def authenticate_user(session: Session, *, email: str, password: str) -> UserRow
     if not verify_password(password, user.password_hash):
         return None
     return user
+
+
+def update_user_tier(session: Session, user_id: int, tier: str) -> UserRow | None:
+    user = get_user_by_id(session, user_id)
+    if user is None:
+        return None
+    user.tier = tier
+    session.flush()
+    return user

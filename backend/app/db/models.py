@@ -141,6 +141,36 @@ class UserRow(Base):
     )
 
 
+class PaymentRow(Base):
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    plan: Mapped[str] = mapped_column(String(32), nullable=False)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="pending",
+        server_default="pending",
+        index=True,
+    )
+    buy_order: Mapped[str] = mapped_column(String(26), unique=True, nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(61), nullable=False)
+    token: Mapped[str] = mapped_column(String(128), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class ModelMetricRow(Base):
     __tablename__ = "model_metrics"
 
