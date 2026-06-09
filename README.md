@@ -85,7 +85,12 @@ https://github.com/mvh11/Prediktia
 **El contribuidor mvsh18 es = mvh11 (Maximiliano Venegas) solo que no tengo enlazado el mismo git al IDLE**
 
 ---
-
+**TARJETA SIMULACIÓN TRANSBANK**: 
+VISA: 4051885600446623
+CVV: 123
+Fecha: cualquier futura
+RUT: 11.111.111-1
+Clave: 123
 
 # ⚠️ Aviso Legal
 
