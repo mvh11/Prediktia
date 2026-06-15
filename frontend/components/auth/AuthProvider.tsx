@@ -12,7 +12,7 @@ import {
 } from "react";
 
 import { fetchCurrentUser, loginRequest, registerRequest } from "@/lib/auth/api";
-import { clearAuthSession, readAuthSession, writeAuthSession } from "@/lib/auth/storage";
+import { clearAuthSession, readAuthSession, updateStoredUser, writeAuthSession } from "@/lib/auth/storage";
 import type { AuthUser } from "@/lib/auth/types";
 import { clearValueBetsCache } from "@/lib/valueBets/fetchValueBetsOnce";
 
@@ -103,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const current = await fetchCurrentUser(token);
       setUser(current);
       setAccessToken(token);
+      updateStoredUser(current);
       clearValueBetsCache();
     } catch {
       /* sesión inválida — no forzar logout desde planes */

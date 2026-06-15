@@ -79,14 +79,17 @@ export function PrimaryNav() {
             <span className="text-xs text-zinc-500">...</span>
           ) : user ? (
             <>
-              <div className="hidden items-center gap-2 sm:flex">
-                <span className="max-w-[9rem] truncate text-xs text-zinc-400">
+              <Link
+                href="/perfil"
+                className="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white/5"
+              >
+                <span className="max-w-[8rem] truncate text-xs text-zinc-400 sm:max-w-[9rem]">
                   {user.display_name || user.email}
                 </span>
-                <span className="rounded-md bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-200 ring-1 ring-violet-400/25">
+                <span className="hidden rounded-md bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-200 ring-1 ring-violet-400/25 sm:inline">
                   {user.tier_label || tierLabel(normalizeTier(user.tier))}
                 </span>
-              </div>
+              </Link>
               <button
                 type="button"
                 onClick={logout}

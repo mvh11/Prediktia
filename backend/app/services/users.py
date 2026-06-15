@@ -51,3 +51,29 @@ def update_user_tier(session: Session, user_id: int, tier: str) -> UserRow | Non
     user.tier = tier
     session.flush()
     return user
+
+
+def update_user_display_name(session: Session, user_id: int, display_name: str) -> UserRow | None:
+    user = get_user_by_id(session, user_id)
+    if user is None:
+        return None
+    user.display_name = display_name.strip()[:128]
+    session.flush()
+    return user
+
+
+def change_user_password(
+    session: Session,
+    user_id: int,
+    *,
+    current_password: str,
+    new_password: str,
+) -> UserRow | None:
+    user = get_user_by_id(session, user_id)
+    if user is None:
+        return None
+    if not verify_password(current_password, user.password_hash):
+        return None
+    user.password_hash = hash_password(new_password)
+    session.flush()
+    return user

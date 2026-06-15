@@ -17,3 +17,15 @@ class CreateWebpayPaymentRequest(BaseModel):
 class CreateWebpayPaymentResponse(BaseModel):
     url: str
     token: str
+
+
+class PaymentHistoryItem(BaseModel):
+    id: int
+    plan: str
+    amount: int
+    status: PaymentStatus
+    created_at: str
+
+
+class PaymentHistoryListResponse(BaseModel):
+    items: list[PaymentHistoryItem]

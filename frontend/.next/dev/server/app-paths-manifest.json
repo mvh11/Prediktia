@@ -1,9 +1,5 @@
 {
   "/page": "app/page.js",
   "/login/page": "app/login/page.js",
-  "/value/page": "app/value/page.js",
-  "/matches/page": "app/matches/page.js",
-  "/planes/page": "app/planes/page.js",
-  "/legal/page": "app/legal/page.js",
-  "/acca/page": "app/acca/page.js"
+  "/perfil/page": "app/perfil/page.js"
 }

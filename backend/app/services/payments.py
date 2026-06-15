@@ -52,3 +52,13 @@ def set_payment_status(session: Session, payment: PaymentRow, status: str) -> Pa
     payment.status = status
     session.flush()
     return payment
+
+
+def list_user_payments(session: Session, user_id: int, *, limit: int = 20) -> list[PaymentRow]:
+    stmt = (
+        select(PaymentRow)
+        .where(PaymentRow.user_id == user_id)
+        .order_by(PaymentRow.created_at.desc())
+        .limit(max(1, min(limit, 50)))
+    )
+    return list(session.scalars(stmt).all())

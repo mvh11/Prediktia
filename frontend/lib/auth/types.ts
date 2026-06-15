@@ -13,3 +13,15 @@ export type AuthSession = {
   token_type: string;
   user: AuthUser;
 };
+
+export type PaymentHistoryItem = {
+  id: number;
+  plan: string;
+  amount: number;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+};
+
+export type PaymentHistoryResponse = {
+  items: PaymentHistoryItem[];
+};

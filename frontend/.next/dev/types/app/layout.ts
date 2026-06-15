@@ -1,4 +1,4 @@
-// File: C:\Tesis\Prediktia\frontend\app\layout.tsx
+// File: C:\Users\sinzunza\Downloads\Prediktia\frontend\app\layout.tsx
 import * as entry from '../../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

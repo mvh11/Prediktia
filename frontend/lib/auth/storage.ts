@@ -21,6 +21,14 @@ export function writeAuthSession(session: AuthSession): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
 }
 
+export function updateStoredUser(user: AuthSession["user"]): void {
+  const session = readAuthSession();
+  if (!session) {
+    return;
+  }
+  writeAuthSession({ ...session, user });
+}
+
 export function clearAuthSession(): void {
   window.localStorage.removeItem(STORAGE_KEY);
 }

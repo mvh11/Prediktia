@@ -6,10 +6,23 @@ from sqlalchemy.exc import IntegrityError
 from app.api.deps.auth import get_current_user
 from app.config import Settings, get_settings
 from app.db.session import session_scope
-from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserPublic
+from app.schemas.auth import (
+    ChangePasswordRequest,
+    LoginRequest,
+    RegisterRequest,
+    TokenResponse,
+    UpdateProfileRequest,
+    UserPublic,
+)
 from app.services.auth_tokens import create_access_token
 from app.services.plan_permissions import normalize_tier, tier_label
-from app.services.users import authenticate_user, create_user, get_user_by_email
+from app.services.users import (
+    authenticate_user,
+    change_user_password,
+    create_user,
+    get_user_by_email,
+    update_user_display_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,3 +119,59 @@ def login(
 @router.get("/me", response_model=UserPublic)
 def me(current_user: UserPublic = Depends(get_current_user)) -> UserPublic:
     return current_user
+
+
+@router.patch("/me", response_model=UserPublic)
+def update_me(
+    body: UpdateProfileRequest,
+    settings: Settings = Depends(get_settings),
+    current_user: UserPublic = Depends(get_current_user),
+) -> UserPublic:
+    database_url = _require_database(settings)
+
+    with session_scope(database_url) as session:
+        if session is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Base de datos no disponible.",
+            )
+
+        user = update_user_display_name(session, current_user.id, body.display_name)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Usuario no encontrado.",
+            )
+
+        logger.info("Perfil actualizado id=%s", user.id)
+        return _to_public_user(user)
+
+
+@router.patch("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    body: ChangePasswordRequest,
+    settings: Settings = Depends(get_settings),
+    current_user: UserPublic = Depends(get_current_user),
+) -> None:
+    database_url = _require_database(settings)
+
+    with session_scope(database_url) as session:
+        if session is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Base de datos no disponible.",
+            )
+
+        user = change_user_password(
+            session,
+            current_user.id,
+            current_password=body.current_password,
+            new_password=body.new_password,
+        )
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La contraseña actual no es correcta.",
+            )
+
+        logger.info("Contraseña actualizada id=%s", user.id)

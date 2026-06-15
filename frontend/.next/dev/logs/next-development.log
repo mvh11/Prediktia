@@ -1,7 +1,5 @@
-{"timestamp":"00:00:03.722","source":"Server","level":"LOG","message":""}
-{"timestamp":"00:00:24.430","source":"Server","level":"LOG","message":"○ Compiling / ..."}
-{"timestamp":"00:00:27.539","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
-{"timestamp":"00:00:52.404","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
-{"timestamp":"00:01:20.211","source":"Browser","level":"INFO","message":"[ValueBoard] tier detectado: free fullValue: false"}
-{"timestamp":"00:01:20.211","source":"Browser","level":"INFO","message":"[ValueBoard] tier detectado: free fullValue: false"}
-{"timestamp":"00:05:38.185","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:00:01.911","source":"Server","level":"LOG","message":""}
+{"timestamp":"00:00:05.181","source":"Server","level":"LOG","message":"○ Compiling / ..."}
+{"timestamp":"00:00:08.960","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:06:58.678","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}
+{"timestamp":"00:06:59.530","source":"Browser","level":"INFO","message":"%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"}

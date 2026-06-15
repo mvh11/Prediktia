@@ -13,7 +13,12 @@ from app.api.deps.auth import get_current_user
 from app.config import Settings, get_settings
 from app.db.session import session_scope
 from app.schemas.auth import UserPublic
-from app.schemas.payments import CreateWebpayPaymentRequest, CreateWebpayPaymentResponse
+from app.schemas.payments import (
+    CreateWebpayPaymentRequest,
+    CreateWebpayPaymentResponse,
+    PaymentHistoryItem,
+    PaymentHistoryListResponse,
+)
 from app.services.payments import (
     PAYMENT_STATUS_APPROVED,
     PAYMENT_STATUS_REJECTED,
@@ -21,6 +26,7 @@ from app.services.payments import (
     create_pending_payment,
     get_payment_by_buy_order,
     get_payment_by_token,
+    list_user_payments,
     set_payment_status,
 )
 from app.services.plan_permissions import can_use_full_value_bets, normalize_tier
@@ -81,6 +87,37 @@ async def _extract_token_ws(request: Request) -> str | None:
         except Exception:
             logger.debug("webpay return: no se pudo leer form", exc_info=True)
     return None
+
+
+@router.get("/history", response_model=PaymentHistoryListResponse)
+def payment_history(
+    limit: int = 20,
+    settings: Settings = Depends(get_settings),
+    current_user: UserPublic = Depends(get_current_user),
+) -> PaymentHistoryListResponse:
+    """Historial de pagos del usuario autenticado."""
+    database_url = _require_database(settings)
+
+    with session_scope(database_url) as session:
+        if session is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Base de datos no disponible.",
+            )
+
+        rows = list_user_payments(session, current_user.id, limit=limit)
+        items = [
+            PaymentHistoryItem(
+                id=row.id,
+                plan=row.plan,
+                amount=row.amount,
+                status=row.status,  # type: ignore[arg-type]
+                created_at=row.created_at.isoformat(),
+            )
+            for row in rows
+        ]
+
+    return PaymentHistoryListResponse(items=items)
 
 
 @router.post("/webpay/create", response_model=CreateWebpayPaymentResponse)
