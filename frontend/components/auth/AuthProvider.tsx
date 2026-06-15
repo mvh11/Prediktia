@@ -24,6 +24,7 @@ type AuthContextValue = {
   register: (email: string, password: string, displayName?: string) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
+  applyUserUpdate: (updated: AuthUser) => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -110,6 +111,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [accessToken]);
 
+  const applyUserUpdate = useCallback((updated: AuthUser) => {
+    setUser(updated);
+    updateStoredUser(updated);
+  }, []);
+
   const prevAuthKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const authKey = `${accessToken ?? ""}::${user?.tier ?? "anon"}`;
@@ -120,8 +126,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [accessToken, user?.tier]);
 
   const value = useMemo(
-    () => ({ user, accessToken, isLoading, login, register, logout, refreshUser }),
-    [user, accessToken, isLoading, login, register, logout, refreshUser],
+    () => ({ user, accessToken, isLoading, login, register, logout, refreshUser, applyUserUpdate }),
+    [user, accessToken, isLoading, login, register, logout, refreshUser, applyUserUpdate],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

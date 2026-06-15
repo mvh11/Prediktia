@@ -11,6 +11,7 @@ import {
   fetchPaymentHistory,
   updateProfileRequest,
 } from "@/lib/auth/api";
+import { readAccessToken } from "@/lib/auth/storage";
 import type { PaymentHistoryItem } from "@/lib/auth/types";
 import { isPaidTier, normalizeTier, tierLabel } from "@/lib/plans";
 
@@ -78,7 +79,7 @@ function paymentStatusClasses(status: PaymentHistoryItem["status"]): string {
 
 export function ProfilePage() {
   const router = useRouter();
-  const { user, accessToken, isLoading, logout, refreshUser } = useAuth();
+  const { user, accessToken, isLoading, logout, applyUserUpdate } = useAuth();
 
   const [displayName, setDisplayName] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
@@ -105,19 +106,21 @@ export function ProfilePage() {
   }, [isLoading, user, router]);
 
   useEffect(() => {
-    if (user?.display_name) {
-      setDisplayName(user.display_name);
+    if (!user) {
+      return;
     }
-  }, [user?.display_name]);
+    setDisplayName(user.display_name ?? "");
+  }, [user?.id]);
 
   const loadPayments = useCallback(async () => {
-    if (!accessToken) {
+    const token = accessToken ?? readAccessToken();
+    if (!token) {
       return;
     }
     setPaymentsLoading(true);
     setPaymentsError(null);
     try {
-      const data = await fetchPaymentHistory(accessToken);
+      const data = await fetchPaymentHistory(token);
       setPayments(data.items);
     } catch (err) {
       setPaymentsError(err instanceof Error ? err.message : "Error al cargar pagos.");
@@ -132,7 +135,15 @@ export function ProfilePage() {
 
   async function onProfileSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!accessToken || !displayName.trim()) {
+    const token = accessToken ?? readAccessToken();
+    const trimmedName = displayName.trim();
+
+    if (!token) {
+      setProfileError("Sesión expirada. Vuelve a iniciar sesión.");
+      return;
+    }
+    if (!trimmedName) {
+      setProfileError("El nombre no puede estar vacío.");
       return;
     }
 
@@ -141,8 +152,9 @@ export function ProfilePage() {
     setProfileError(null);
 
     try {
-      await updateProfileRequest(accessToken, displayName);
-      await refreshUser();
+      const updated = await updateProfileRequest(token, trimmedName);
+      applyUserUpdate(updated);
+      setDisplayName(updated.display_name);
       setProfileNotice("Nombre actualizado correctamente.");
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : "No se pudo guardar.");
@@ -153,7 +165,9 @@ export function ProfilePage() {
 
   async function onPasswordSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!accessToken) {
+    const token = accessToken ?? readAccessToken();
+    if (!token) {
+      setPasswordError("Sesión expirada. Vuelve a iniciar sesión.");
       return;
     }
 
@@ -171,7 +185,7 @@ export function ProfilePage() {
 
     setPasswordSaving(true);
     try {
-      await changePasswordRequest(accessToken, currentPassword, newPassword);
+      await changePasswordRequest(token, currentPassword, newPassword);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -296,7 +310,7 @@ export function ProfilePage() {
 
             <button
               type="submit"
-              disabled={profileSaving || displayName.trim() === user.display_name}
+              disabled={profileSaving || displayName.trim() === (user.display_name ?? "").trim()}
               className="rounded-xl bg-gradient-to-r from-cyan-500 to-violet-500 px-5 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {profileSaving ? "Guardando..." : "Guardar cambios"}

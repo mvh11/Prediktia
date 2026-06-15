@@ -105,7 +105,8 @@ export async function updateProfileRequest(
   const res = await fetch(`${API_URL}/auth/me`, {
     method: "PATCH",
     headers: {
-      ...authHeaders({ "Content-Type": "application/json" }, token),
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({ display_name: displayName.trim() }),
   });
@@ -131,7 +132,8 @@ export async function changePasswordRequest(
   const res = await fetch(`${API_URL}/auth/me/password`, {
     method: "PATCH",
     headers: {
-      ...authHeaders({ "Content-Type": "application/json" }, token),
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       current_password: currentPassword,
