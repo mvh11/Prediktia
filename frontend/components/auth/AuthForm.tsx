@@ -16,6 +16,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [isAdult, setIsAdult] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -24,6 +25,12 @@ export function AuthForm({ mode }: AuthFormProps) {
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+
+    if (isRegister && !isAdult) {
+      setError("Debes confirmar que eres mayor de 18 años para crear una cuenta.");
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -98,6 +105,27 @@ export function AuthForm({ mode }: AuthFormProps) {
           />
         </label>
 
+        {isRegister ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-4">
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={isAdult}
+                onChange={(e) => setIsAdult(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-amber-400/50 bg-black/40 text-amber-500 focus:ring-amber-400/40"
+              />
+              <span className="text-sm leading-relaxed text-amber-50/95">
+                <strong className="font-semibold text-amber-100">Soy mayor de 18 años</strong>{" "}
+                y acepto que Prediktia es una herramienta informativa. He leído el{" "}
+                <Link href="/legal" className="font-medium text-cyan-300 underline-offset-2 hover:text-cyan-200 hover:underline">
+                  aviso legal
+                </Link>
+                .
+              </span>
+            </label>
+          </div>
+        ) : null}
+
         {error ? (
           <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
             {error}
@@ -106,7 +134,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || (isRegister && !isAdult)}
           className="w-full rounded-xl bg-gradient-to-r from-cyan-500 to-violet-500 px-4 py-3 font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submitting ? "Procesando..." : isRegister ? "Registrarme" : "Entrar"}
