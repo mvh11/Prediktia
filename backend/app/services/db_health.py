@@ -165,7 +165,10 @@ def build_db_health_payload(settings: Settings) -> dict[str, Any]:
                 alembic_rev = conn.execute(
                     text("SELECT version_num FROM alembic_version LIMIT 1")
                 ).scalar()
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "build_db_health_payload: alembic_version no disponible: %s", exc
+                )
                 alembic_rev = None
 
             if not _acca_history_ready(conn):
@@ -176,8 +179,11 @@ def build_db_health_payload(settings: Settings) -> dict[str, Any]:
                             alembic_rev = conn2.execute(
                                 text("SELECT version_num FROM alembic_version LIMIT 1")
                             ).scalar()
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.debug(
+                                "build_db_health_payload: alembic_version no disponible tras migrate: %s",
+                                exc,
+                            )
                     else:
                         err = schema_bootstrap_error()
                         return {
