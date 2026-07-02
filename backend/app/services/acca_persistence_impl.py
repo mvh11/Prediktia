@@ -220,7 +220,7 @@ def fetch_acca_db_last_debug(settings: Settings) -> dict[str, Any]:
                 return {
                     "mode": "error",
                     "database_url_hash": url_hash,
-                    "detail": "session_scope returned None (engine)",
+                    "detail": "database_unavailable",
                 }
             total_accas = int(db.scalar(select(func.count()).select_from(AccaHistoryRow)) or 0)
             total_predictions = int(db.scalar(select(func.count()).select_from(PredictionRow)) or 0)
@@ -261,13 +261,12 @@ def fetch_acca_db_last_debug(settings: Settings) -> dict[str, Any]:
                     else None
                 ),
             }
-    except Exception as exc:
+    except Exception:
         logger.exception("fetch_acca_db_last_debug")
         return {
             "mode": "error",
             "database_url_hash": url_hash,
-            "detail": str(exc),
-            "error_type": type(exc).__name__,
+            "detail": "database_unavailable",
         }
 
 

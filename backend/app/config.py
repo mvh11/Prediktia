@@ -120,6 +120,61 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("FRONTEND_URL", "frontend_url"),
     )
 
+    app_env: str = Field(
+        default="development",
+        validation_alias=AliasChoices("APP_ENV", "app_env"),
+    )
+
+    auth_rate_limit_max: int = Field(
+        default=10,
+        validation_alias=AliasChoices("AUTH_RATE_LIMIT_MAX", "auth_rate_limit_max"),
+        description="Maximo de solicitudes POST /auth/login|register por IP en la ventana.",
+    )
+    auth_rate_limit_window_seconds: int = Field(
+        default=60,
+        validation_alias=AliasChoices(
+            "AUTH_RATE_LIMIT_WINDOW_SECONDS",
+            "auth_rate_limit_window_seconds",
+        ),
+    )
+
+    @field_validator("app_env", mode="before")
+    @classmethod
+    def _normalize_app_env(cls, value: object) -> str:
+        if value is None:
+            return "development"
+        text = str(value).strip().lower()
+        return text or "development"
+
+    @field_validator("auth_rate_limit_max", "auth_rate_limit_window_seconds", mode="before")
+    @classmethod
+    def _coerce_positive_int(cls, value: object) -> int:
+        if value is None or value == "":
+            return 0
+        return int(value)
+
+    @field_validator("auth_rate_limit_max")
+    @classmethod
+    def _validate_rate_limit_max(cls, value: int) -> int:
+        return max(1, value)
+
+    @field_validator("auth_rate_limit_window_seconds")
+    @classmethod
+    def _validate_rate_limit_window(cls, value: int) -> int:
+        return max(1, value)
+
+    def is_production(self) -> bool:
+        return self.app_env == "production"
+
+    def cors_allow_origins(self) -> list[str]:
+        if self.is_production():
+            origin = self.frontend_url.rstrip("/")
+            return [origin] if origin else []
+        return ["*"]
+
+    def debug_routes_enabled(self) -> bool:
+        return not self.is_production()
+
     @field_validator(
         "webpay_commerce_code",
         "webpay_api_key",

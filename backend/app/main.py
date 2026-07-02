@@ -9,6 +9,8 @@ from fastapi.responses import JSONResponse
 from app.api.routes import acca, auth, debug_latam, matches, payments, value_bets
 from app.config import Settings, get_settings
 from app.db.migrations import ensure_database_schema
+from app.middleware.auth_rate_limit import AuthRateLimitMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.services.db_health import database_connected, inspect_db_health
 
 logger = logging.getLogger("prediktia")
@@ -30,6 +32,11 @@ async def lifespan(app: FastAPI):
 
     settings = get_settings()
     app.state.db_mode = "stateless"
+
+    if settings.is_production():
+        logger.info("APP_ENV=production — debug/docs deshabilitados, CORS restringido")
+    else:
+        logger.info("APP_ENV=%s — modo desarrollo", settings.app_env)
 
     if not settings.database_url:
         logger.info("DB disabled — no DATABASE_URL; historial ACCA sin persistencia")
@@ -60,7 +67,6 @@ async def lifespan(app: FastAPI):
             except Exception:
                 logger.warning("DB bootstrap excepción (API sigue sin bloquear)", exc_info=True)
 
-        # No bloquear el arranque: fixtures/value/acca no dependen de PostgreSQL.
         threading.Thread(target=_bootstrap_db, name="db-bootstrap", daemon=True).start()
         logger.info("DB bootstrap en segundo plano (no bloquea /matches ni /value-bets)")
 
@@ -71,49 +77,64 @@ async def lifespan(app: FastAPI):
     logger.info("Prediktia API shutdown")
 
 
-# Inicialización mínima: rutas OpenAPI por defecto (/docs, /openapi.json).
-# No usar root_path ni desactivar openapi_url en producción (Swagger falla con 404).
-app = FastAPI(lifespan=lifespan)
+def create_app(settings: Settings | None = None) -> FastAPI:
+    """Factory de la aplicacion; permite tests con distintos Settings."""
+    cfg = settings or get_settings()
+    production = cfg.is_production()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    app = FastAPI(
+        lifespan=lifespan,
+        docs_url=None if production else "/docs",
+        redoc_url=None if production else "/redoc",
+        openapi_url=None if production else "/openapi.json",
+    )
 
-app.include_router(auth.router)
-app.include_router(payments.router)
-app.include_router(matches.router)
-app.include_router(value_bets.router)
-app.include_router(debug_latam.router)
-app.include_router(acca.router)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cfg.cors_allow_origins(),
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    app.add_middleware(AuthRateLimitMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    app.include_router(auth.router)
+    app.include_router(payments.router)
+    app.include_router(matches.router)
+    app.include_router(value_bets.router)
+    if cfg.debug_routes_enabled():
+        app.include_router(debug_latam.router)
+    app.include_router(acca.router)
+
+    if not production:
+
+        @app.get("/openapi.json", include_in_schema=False)
+        def openapi_schema() -> JSONResponse:
+            """Esquema OpenAPI en la ruta estándar (compatible con Render y Swagger UI)."""
+            return JSONResponse(app.openapi())
+
+    @app.get("/health")
+    def health() -> dict[str, str]:
+        """Comprueba que el servidor responde (útil para pruebas rápidas)."""
+        return {"status": "ok"}
+
+    @app.get("/health/db")
+    def health_db(settings: Settings = Depends(get_settings)) -> dict:
+        """
+        Estado de PostgreSQL / acca_history.
+        Éxito: {"database": "ok", "acca_history_exists": true}
+        """
+        payload = inspect_db_health(settings)
+        if payload.get("database") == "ok":
+            logger.info("DB ok (health/db) acca_history_exists=%s", payload.get("acca_history_exists"))
+        elif payload.get("database") == "disabled":
+            logger.info("DB disabled (health/db)")
+        else:
+            logger.warning("DB health check: %s", payload)
+        return payload
+
+    return app
 
 
-@app.get("/openapi.json", include_in_schema=False)
-def openapi_schema() -> JSONResponse:
-    """Esquema OpenAPI en la ruta estándar (compatible con Render y Swagger UI)."""
-    return JSONResponse(app.openapi())
-
-
-@app.get("/health")
-def health() -> dict[str, str]:
-    """Comprueba que el servidor responde (útil para pruebas rápidas)."""
-    return {"status": "ok"}
-
-
-@app.get("/health/db")
-def health_db(settings: Settings = Depends(get_settings)) -> dict:
-    """
-    Estado de PostgreSQL / acca_history.
-    Éxito: {"database": "ok", "acca_history_exists": true}
-    """
-    payload = inspect_db_health(settings)
-    if payload.get("database") == "ok":
-        logger.info("DB ok (health/db) acca_history_exists=%s", payload.get("acca_history_exists"))
-    elif payload.get("database") == "disabled":
-        logger.info("DB disabled (health/db)")
-    else:
-        logger.warning("DB health check: %s", payload)
-    return payload
+app = create_app()
